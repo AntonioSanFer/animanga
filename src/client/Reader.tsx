@@ -1,20 +1,65 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { errorMessage, fetchReaderData } from "./api";
+import type { Chapter } from "../shared/types";
+import { errorMessage, fetchReaderData, request, withProvider, type ChaptersResponse } from "./api";
+import { ProviderPicker, saveProgress, setSeenTotal } from "./bits";
 import { navigate } from "./router";
 import { IconArrowLeft, Loading } from "./ui";
 
-export function ReaderPage({ chapterId }: { chapterId: string }) {
+function provOf(search: string): string {
+  return new URLSearchParams(search).get("provider") ?? "";
+}
+
+export function ReaderPage({ chapterId, search }: { chapterId: string; search: string }) {
+  const provider = provOf(search);
   const query = useQuery({
-    queryKey: ["reader", chapterId],
-    queryFn: () => fetchReaderData(chapterId),
+    queryKey: ["reader", chapterId, provider],
+    queryFn: () => fetchReaderData(chapterId, provider),
   });
   const data = query.data;
   const mangaId = data?.chapter.mangaId ?? null;
   const [urls, setUrls] = useState<string[]>([]);
 
+  const siblings = useQuery({
+    queryKey: ["reader", "siblings", mangaId, data?.chapter.lang, provider],
+    queryFn: () =>
+      request<ChaptersResponse>(
+        withProvider(
+          `/api/manga/${encodeURIComponent(mangaId!)}/chapters?lang=${encodeURIComponent(data!.chapter.lang)}`,
+          provider,
+        ),
+      ),
+    enabled: mangaId !== null && data !== undefined,
+    staleTime: 300_000,
+  });
+  const list: Chapter[] = siblings.data?.items ?? [];
+  const index = data ? list.findIndex((chapter) => chapter.id === data.chapter.id) : -1;
+  const prev = index > 0 ? list[index - 1] : null;
+  const next = index !== -1 && index < list.length - 1 ? list[index + 1] : null;
+
+  useEffect(() => {
+    if (!data || !mangaId) return;
+    const chapter = data.chapter;
+    const url = withProvider(`/manga/chapter/${chapter.id}`, provider);
+    saveProgress({
+      kind: "manga",
+      seriesId: mangaId,
+      seriesTitle: chapter.mangaTitle ?? "Manga",
+      cover: null,
+      itemId: chapter.id,
+      label: `${chapter.volume ? `Vol.${chapter.volume} ` : ""}${chapter.chapter ? `Ch.${chapter.chapter}` : "Chapter"}`,
+      lang: chapter.lang,
+      url,
+    });
+    if (list.length > 0) setSeenTotal("manga", mangaId, list.length);
+  }, [data, mangaId, list.length, provider]);
+
   function back() {
     navigate(mangaId ? `/manga/${mangaId}` : "/downloads");
+  }
+
+  function goChapter(id: string) {
+    navigate(withProvider(`/manga/chapter/${id}`, provider));
   }
 
   useEffect(() => {
@@ -57,10 +102,23 @@ export function ReaderPage({ chapterId }: { chapterId: string }) {
           <IconArrowLeft />
           Back
         </button>
+        <button type="button" className="btn btn-sm btn-ghost" disabled={!prev} onClick={() => prev && goChapter(prev.id)}>
+          ← Prev
+        </button>
+        <button type="button" className="btn btn-sm btn-ghost" disabled={!next} onClick={() => next && goChapter(next.id)}>
+          Next →
+        </button>
         <span className="title">
           {chapter?.mangaTitle ? `${chapter.mangaTitle} · ` : ""}
           {label}
         </span>
+        <ProviderPicker
+          kind="manga"
+          value={provider}
+          onChange={(nextProvider) =>
+            navigate(withProvider(`/manga/chapter/${chapterId}`, nextProvider))
+          }
+        />
         {chapter && (
           <span className="muted">
             {chapter.pages.length} pages{data?.blobs ? " · saved copy" : ""}
@@ -90,14 +148,14 @@ export function ReaderPage({ chapterId }: { chapterId: string }) {
 
       {query.isSuccess && (
         <div className="reader-pages">
-          {urls.map((src, index) => (
+          {urls.map((src, idx) => (
             <img
               key={src}
               src={src}
-              alt={`Page ${index + 1}`}
-              loading={index < 3 ? "eager" : "lazy"}
+              alt={`Page ${idx + 1}`}
+              loading={idx < 3 ? "eager" : "lazy"}
               onError={(event) => {
-                const fallback = data?.chapter.pages[index];
+                const fallback = data?.chapter.pages[idx];
                 const image = event.currentTarget;
                 if (!fallback || image.dataset.fallback) return;
                 image.dataset.fallback = "1";

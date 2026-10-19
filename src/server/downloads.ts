@@ -280,6 +280,7 @@ function findOutput(dir: string, itemId: string, lang: string): string | null {
 async function downloadAnime(job: DownloadJob, signal: AbortSignal): Promise<void> {
   const lang = job.lang === "dub" ? "dub" : "sub";
   const stream = await getStream(job.itemId, lang);
+  if (!stream.url.startsWith("https://") || stream.url.startsWith("-")) throw new Error("Could not resolve stream");
   const dir = join(DOWNLOAD_DIR, "anime", job.sourceId);
   mkdirSync(dir, { recursive: true });
   const template = join(dir, `${job.itemId}.${lang}.%(ext)s`);

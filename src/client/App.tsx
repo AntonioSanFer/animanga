@@ -5,17 +5,17 @@ import { AdminPage } from "./Admin";
 import { AnimeDetailPage } from "./AnimeDetail";
 import { Login, Pending } from "./Accounts";
 import { signOutAndReload } from "./auth";
-import { BrowseAnimePage, BrowseMangaPage } from "./Browse";
+import { BrowseAnimePage, BrowseMangaPage, HomePage } from "./Browse";
 import { DownloadsPage } from "./Downloads";
 import { FavouritesPage } from "./Favourites";
 import { MangaDetailPage } from "./MangaDetail";
 import { ReaderPage } from "./Reader";
-import { Link, navigate, useLocation } from "./router";
+import { Link, useLocation } from "./router";
 import { ErrorView, Loading } from "./ui";
 import { WatchPage } from "./Watch";
 
 type Route =
-  | { name: "redirect" }
+  | { name: "home" }
   | { name: "browse-manga" }
   | { name: "browse-anime" }
   | { name: "manga"; id: string }
@@ -31,7 +31,7 @@ function matchRoute(pathname: string): Route {
   const parts = pathname.split("/").filter(Boolean);
   const [first, second, third] = parts;
 
-  if (parts.length === 0) return { name: "redirect" };
+  if (parts.length === 0) return { name: "home" };
 
   if (first === "manga") {
     if (parts.length === 1) return { name: "browse-manga" };
@@ -66,13 +66,6 @@ function pendingStatus(error: ApiError): UserStatus {
   return "pending";
 }
 
-function Redirect() {
-  useEffect(() => {
-    navigate("/manga", true);
-  }, []);
-  return <Loading fullPage label="Redirecting…" />;
-}
-
 function NotFound() {
   return (
     <div className="state">
@@ -86,6 +79,8 @@ function NotFound() {
 
 function renderPage(route: Route): ReactNode {
   switch (route.name) {
+    case "home":
+      return <HomePage />;
     case "browse-manga":
       return <BrowseMangaPage />;
     case "browse-anime":
@@ -129,6 +124,9 @@ function Shell({
             AniManga
           </Link>
           <nav className="nav" aria-label="Main">
+            <Link to="/" aria-current={pathname === "/" ? "page" : undefined}>
+              Home
+            </Link>
             <Link to="/manga" aria-current={mangaActive ? "page" : undefined}>
               Manga
             </Link>
@@ -217,8 +215,7 @@ export default function App() {
   const search = queryIndex === -1 ? "" : location.slice(queryIndex + 1);
   const route = matchRoute(pathname);
 
-  if (route.name === "redirect") return <Redirect />;
-  if (route.name === "reader") return <ReaderPage chapterId={route.id} />;
+  if (route.name === "reader") return <ReaderPage chapterId={route.id} search={search} />;
   if (route.name === "watch") return <WatchPage episodeId={route.id} search={search} />;
 
   return (

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Chapter, DownloadJob } from "../shared/types";
 import {
   MANGA_LANGS,
@@ -11,25 +11,33 @@ import {
   useDownloads,
   useFavourites,
   useMangaLang,
+  useProvider,
+  withProvider,
   type ChaptersResponse,
   type MangaDetailResponse,
 } from "./api";
+import { BackButton, ProviderPicker, getProgress, safeEntryUrl, setSeenTotal } from "./bits";
 import { Link } from "./router";
 import { Cover, Empty, ErrorView, IconDownload, IconHeart, Loading } from "./ui";
 
 export function MangaDetailPage({ id }: { id: string }) {
   const [lang, setLang] = useMangaLang();
+  const [provider, setProvider] = useProvider("manga");
   const [limit, setLimit] = useState(100);
+  const [volume, setVolume] = useState("all");
   const queryClient = useQueryClient();
 
   const mangaQuery = useQuery({
-    queryKey: ["manga", id, lang],
-    queryFn: () => request<MangaDetailResponse>(`/api/manga/${encodeURIComponent(id)}?lang=${encodeURIComponent(lang)}`),
+    queryKey: ["manga", id, lang, provider],
+    queryFn: () =>
+      request<MangaDetailResponse>(withProvider(`/api/manga/${encodeURIComponent(id)}?lang=${encodeURIComponent(lang)}`, provider)),
   });
   const chaptersQuery = useQuery({
-    queryKey: ["manga", id, "chapters", lang],
+    queryKey: ["manga", id, "chapters", lang, provider],
     queryFn: () =>
-      request<ChaptersResponse>(`/api/manga/${encodeURIComponent(id)}/chapters?lang=${encodeURIComponent(lang)}`),
+      request<ChaptersResponse>(
+        withProvider(`/api/manga/${encodeURIComponent(id)}/chapters?lang=${encodeURIComponent(lang)}`, provider),
+      ),
   });
   const favourites = useFavourites();
   const downloads = useDownloads();
@@ -75,14 +83,44 @@ export function MangaDetailPage({ id }: { id: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["downloads"] }),
   });
 
+  const downloadAll = useMutation({
+    mutationFn: async (items: Chapter[]) => {
+      if (!manga) throw new Error("Manga is not loaded");
+      for (const chapter of items) {
+        await post("/api/downloads", {
+          kind: "manga",
+          sourceId: id,
+          itemId: chapter.id,
+          title: manga.title,
+          label: chapterLabel(chapter),
+          cover: manga.cover,
+          lang,
+        });
+      }
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["downloads"] }),
+  });
+
+  const chapters = chaptersQuery.data?.items ?? [];
+  useEffect(() => {
+    if (chapters.length > 0) setSeenTotal("manga", id, chapters.length);
+  }, [id, chapters.length]);
+
   if (mangaQuery.isPending) return <Loading label="Loading manga…" />;
   if (mangaQuery.isError) return <ErrorView error={mangaQuery.error} onRetry={() => mangaQuery.refetch()} />;
   if (!manga) return <Empty>Manga not found.</Empty>;
 
-  const chapters = chaptersQuery.data?.items ?? [];
+  const volumes = [...new Set(chapters.map((chapter) => chapter.volume ?? ""))];
+  const visible = volume === "all" ? chapters : chapters.filter((chapter) => (chapter.volume ?? "") === volume);
+  const latest = chapters[chapters.length - 1];
+  const saved = getProgress("manga", id);
+  const savedIndex = saved ? chapters.findIndex((chapter) => chapter.id === saved.itemId) : -1;
 
   return (
     <>
+      <div className="back-row">
+        <BackButton to="/manga" />
+      </div>
       <div className="hero">
         <Cover src={manga.cover} alt={`Cover of ${manga.title}`} className="hero-cover" eager />
         <div className="hero-info">
@@ -121,6 +159,17 @@ export function MangaDetailPage({ id }: { id: string }) {
                 ))}
               </select>
             </label>
+            <ProviderPicker kind="manga" value={provider} onChange={setProvider} />
+            {latest && (
+              <Link className="btn btn-sm" to={withProvider(`/manga/chapter/${latest.id}`, provider)}>
+                Latest: {chapterLabel(latest)}
+              </Link>
+            )}
+            {saved && (
+              <Link className="btn btn-sm btn-primary" to={safeEntryUrl(saved.url)}>
+                Continue: {saved.label}
+              </Link>
+            )}
             <button
               type="button"
               className={`btn ${favourite ? "btn-primary" : "btn-ghost"}`}
@@ -145,6 +194,32 @@ export function MangaDetailPage({ id }: { id: string }) {
           <h2>Chapters</h2>
           {chaptersQuery.data && <span className="muted">{chapters.length} available</span>}
         </div>
+        <div className="toolbar">
+          {volumes.length > 1 && (
+            <label className="lang-select">
+              <span className="muted">Volume</span>
+              <select className="select" value={volume} onChange={(event) => setVolume(event.target.value)}>
+                <option value="all">All ({chapters.length})</option>
+                {volumes.map((item) => (
+                  <option key={item} value={item}>
+                    {item || "No volume"} ({chapters.filter((c) => (c.volume ?? "") === item).length})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {visible.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={downloadAll.isPending}
+              onClick={() => downloadAll.mutate(visible)}
+            >
+              <IconDownload />
+              {downloadAll.isPending ? "Queuing…" : `Download all (${visible.length})`}
+            </button>
+          )}
+        </div>
 
         {chaptersQuery.isPending && <Loading label="Loading chapters…" />}
         {chaptersQuery.isError && <ErrorView error={chaptersQuery.error} onRetry={() => chaptersQuery.refetch()} />}
@@ -158,18 +233,25 @@ export function MangaDetailPage({ id }: { id: string }) {
           </p>
         )}
 
-        {chapters.length > 0 && (
+        {(download.isError || downloadAll.isError) && (
+          <p className="form-error" role="alert">
+            {errorMessage(download.error ?? downloadAll.error)}
+          </p>
+        )}
+
+        {visible.length > 0 && (
           <div className="list">
-            {chapters.slice(0, limit).map((chapter) => {
+            {visible.slice(0, limit).map((chapter) => {
               const label = chapterLabel(chapter);
               const isDownloaded = downloaded.has(chapter.id);
               const isDownloading = download.isPending && download.variables?.id === chapter.id;
+              const isNew = saved !== null && savedIndex !== -1 && chapters.indexOf(chapter) > savedIndex;
               return (
                 <div className="row" key={chapter.id}>
                   <div className="row-main">
                     <div className="row-title">
                       {label}
-                      {chapter.title ? ` — ${chapter.title}` : ""}
+                      {chapter.title ? ` — ${chapter.title}` : ""} {isNew && <span className="badge badge-accent">New</span>}
                     </div>
                     <div className="row-sub">
                       {[chapter.group, chapter.pages ? `${chapter.pages} pages` : null, chapter.publishedAt ? new Date(chapter.publishedAt).toLocaleDateString() : null]
@@ -179,7 +261,7 @@ export function MangaDetailPage({ id }: { id: string }) {
                   </div>
                   <div className="row-actions">
                     {isDownloaded && <span className="badge badge-done">Downloaded</span>}
-                    <Link className="btn btn-sm" to={`/manga/chapter/${chapter.id}`}>
+                    <Link className="btn btn-sm" to={withProvider(`/manga/chapter/${chapter.id}`, provider)}>
                       Read
                     </Link>
                     <a
@@ -207,10 +289,10 @@ export function MangaDetailPage({ id }: { id: string }) {
           </div>
         )}
 
-        {chapters.length > limit && (
+        {visible.length > limit && (
           <div className="section-more">
             <button type="button" className="btn" onClick={() => setLimit((value) => value + 100)}>
-              Show more ({chapters.length - limit} remaining)
+              Show more ({visible.length - limit} remaining)
             </button>
           </div>
         )}

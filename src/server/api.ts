@@ -6,16 +6,15 @@ import { findCachedImage, IMAGE_ITEM_LIMIT, saveCachedImage } from "./imageCache
 import { downloadName, chapterDownloadName, buildMangaZip, createDownload, deleteDownload } from "./downloads";
 import { contentDisposition, serveFile } from "./files";
 import { animeStreamResponse } from "./media";
+import { coverUrl, getChapterImage, popularManga } from "./sources/mangadex";
+import { popularAnime } from "./sources/hianime";
 import {
-  coverUrl,
-  getChapter,
-  getChapterImage,
-  getChapters,
-  getManga,
-  popularManga,
-  searchManga,
-} from "./sources/mangadex";
-import { getAnime, getEpisodes, getStream, getSubtitle, popularAnime, searchAnime } from "./sources/hianime";
+  animeOrdered,
+  contentProviders,
+  knownProvider,
+  mangaOrdered,
+  tryProviders,
+} from "./sources/registry";
 import { UA, mangaLang } from "./config";
 import { isAnimeId, assertPublicHttpsUrl, assertResolvesPublic, isUuid, sanitizeFilename } from "./util";
 import type { DownloadJob, Kind } from "../shared/types";
@@ -48,6 +47,16 @@ function validEmail(v: string): boolean {
   return v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
+function providerOf(c: any, kind: Kind): string | undefined {
+  const p = str(c.req.query("provider"), 40);
+  return p || undefined;
+}
+
+function badProvider(c: any, kind: Kind): boolean {
+  const p = providerOf(c, kind);
+  return !!p && !knownProvider(kind, p);
+}
+
 function jobForItem(kind: Kind, itemId: string, lang?: string | null): DownloadJob | null {
   const id = findDoneDownloadId(kind, itemId, lang);
   return id === null ? null : getDownload(id);
@@ -62,6 +71,8 @@ api.get("/providers", (c) =>
     callbacks: AUTH_PROVIDERS.map((p) => ({ ...p, url: callbackUrl(p.id) })),
   }),
 );
+
+api.get("/content-providers", requireUser, (c) => c.json({ items: contentProviders() }));
 
 api.get("/me", requireSession, async (c) => {
   const session = c.get("session");
@@ -123,12 +134,15 @@ api.delete("/favourites/:kind/:sourceId", requireUser, (c) => {
 // ---------- manga ----------
 
 api.get("/manga/search", requireUser, async (c) => {
+  if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const q = str(c.req.query("q"), 200);
   const lang = mangaLang(c.req.query("lang"));
   const page = intParam(c.req.query("page") || "1", 1, 500);
-  const data = await searchManga(q, lang, page);
+  const { result: data, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) =>
+    p.search(q, lang, page),
+  );
   c.header("Cache-Control", "private, max-age=30");
-  return c.json(data);
+  return c.json({ ...data, providerId });
 });
 
 api.get("/manga/popular", requireUser, async (c) => {
@@ -139,11 +153,14 @@ api.get("/manga/popular", requireUser, async (c) => {
 });
 
 api.get("/manga/chapter/:chapterId", requireUser, async (c) => {
+  if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const chapterId = c.req.param("chapterId");
   if (!isUuid(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
   const quality = c.req.query("q") === "hq" ? "data" : "data-saver";
-  const chapter = await getChapter(chapterId, quality);
-  return c.json({ ...chapter, downloadId: findDoneDownloadId("manga", chapterId) });
+  const { result: chapter, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) =>
+    p.chapter(chapterId, quality),
+  );
+  return c.json({ ...chapter, providerId, downloadId: findDoneDownloadId("manga", chapterId) });
 });
 
 let activeZips = 0;
@@ -180,19 +197,25 @@ api.get("/manga/chapter/:chapterId/file", requireUser, async (c) => {
 });
 
 api.get("/manga/:id/chapters", requireUser, async (c) => {
+  if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const id = c.req.param("id");
   if (!isUuid(id)) return c.json({ error: "Invalid manga id" }, 400);
   const lang = mangaLang(c.req.query("lang"));
+  const { result: items, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) =>
+    p.chapters(id, lang),
+  );
   c.header("Cache-Control", "private, max-age=120");
-  return c.json({ items: await getChapters(id, lang), lang });
+  return c.json({ items, lang, providerId });
 });
 
 api.get("/manga/:id", requireUser, async (c) => {
+  if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const id = c.req.param("id");
   if (!isUuid(id)) return c.json({ error: "Invalid manga id" }, 400);
   const lang = mangaLang(c.req.query("lang"));
+  const { result: manga, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) => p.get(id));
   c.header("Cache-Control", "private, max-age=300");
-  return c.json({ ...(await getManga(id)), lang });
+  return c.json({ ...manga, lang, providerId });
 });
 
 api.get("/img/manga/:id/:file", requireUser, async (c) => {
@@ -224,11 +247,14 @@ api.get("/img/page/:chapterId/:index", requireUser, async (c) => {
 // ---------- anime ----------
 
 api.get("/anime/search", requireUser, async (c) => {
+  if (badProvider(c, "anime")) return c.json({ error: "Unknown provider" }, 400);
   const q = str(c.req.query("q"), 200);
   const page = intParam(c.req.query("page") || "1", 1, 100);
-  const items = await searchAnime(q, page);
+  const { result: items, providerId } = await tryProviders(animeOrdered(providerOf(c, "anime")), (p) =>
+    p.search(q, page),
+  );
   c.header("Cache-Control", "private, max-age=60");
-  return c.json({ items });
+  return c.json({ items, providerId });
 });
 
 api.get("/anime/popular", requireUser, async (c) => {
@@ -238,6 +264,7 @@ api.get("/anime/popular", requireUser, async (c) => {
 });
 
 api.get("/anime/stream/:episodeId", requireUser, async (c) => {
+  if (badProvider(c, "anime")) return c.json({ error: "Unknown provider" }, 400);
   const episodeId = c.req.param("episodeId");
   if (!/^\d{1,10}$/.test(episodeId)) return c.json({ error: "Invalid episode id" }, 400);
   const lang = c.req.query("lang") === "dub" ? "dub" : "sub";
@@ -250,18 +277,26 @@ api.get("/anime/stream/:episodeId", requireUser, async (c) => {
     if (row?.file_path) return serveFile(c, row.file_path, { downloadName: name });
   }
 
-  return animeStreamResponse(c, episodeId, lang, name);
+  return animeStreamResponse(c, episodeId, lang, name, providerOf(c, "anime"));
 });
 
 api.get("/anime/subtitle/:episodeId", requireUser, async (c) => {
+  if (badProvider(c, "anime")) return c.json({ error: "Unknown provider" }, 400);
   const episodeId = c.req.param("episodeId");
   if (!/^\d{1,10}$/.test(episodeId)) return c.json({ error: "Invalid episode id" }, 400);
   const lang = c.req.query("lang") === "dub" ? "dub" : "sub";
   try {
-    const sub = await getSubtitle(episodeId, lang);
+    const { result: sub, providerId } = await tryProviders(animeOrdered(providerOf(c, "anime")), (p) =>
+      p.subtitle(episodeId, lang),
+    );
     if (!sub) return c.body(null, 404);
+    c.header("X-Provider", providerId);
     return new Response(sub.body, {
-      headers: { "Content-Type": "text/vtt; charset=utf-8", "Cache-Control": "private, max-age=300" },
+      headers: {
+        "Content-Type": "text/vtt; charset=utf-8",
+        "Cache-Control": "private, max-age=300",
+        "X-Content-Type-Options": "nosniff",
+      },
     });
   } catch {
     return c.body(null, 404);
@@ -269,17 +304,21 @@ api.get("/anime/subtitle/:episodeId", requireUser, async (c) => {
 });
 
 api.get("/anime/:id/episodes", requireUser, async (c) => {
+  if (badProvider(c, "anime")) return c.json({ error: "Unknown provider" }, 400);
   const id = c.req.param("id");
   if (!isAnimeId(id)) return c.json({ error: "Invalid anime id" }, 400);
+  const { result: items, providerId } = await tryProviders(animeOrdered(providerOf(c, "anime")), (p) => p.episodes(id));
   c.header("Cache-Control", "private, max-age=600");
-  return c.json({ items: await getEpisodes(id) });
+  return c.json({ items, providerId });
 });
 
 api.get("/anime/:id", requireUser, async (c) => {
+  if (badProvider(c, "anime")) return c.json({ error: "Unknown provider" }, 400);
   const id = c.req.param("id");
   if (!isAnimeId(id)) return c.json({ error: "Invalid anime id" }, 400);
+  const { result: anime, providerId } = await tryProviders(animeOrdered(providerOf(c, "anime")), (p) => p.get(id));
   c.header("Cache-Control", "private, max-age=600");
-  return c.json(await getAnime(id));
+  return c.json({ ...anime, providerId });
 });
 
 api.get("/img/anime", requireUser, async (c) => {

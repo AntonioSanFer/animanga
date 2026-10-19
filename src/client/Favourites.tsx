@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Favourite } from "../shared/types";
 import { del, errorMessage, useFavourites } from "./api";
+import { hasProgress } from "./bits";
 import { Link } from "./router";
 import { Cover, Empty, ErrorView, IconTrash, Loading } from "./ui";
 
@@ -19,6 +20,7 @@ function FavouriteCard({
         <Cover src={favourite.cover} alt={`Cover of ${favourite.title}`} />
         <span className="card-title">{favourite.title}</span>
         <span className="card-meta capitalize">{favourite.kind}</span>
+        {hasProgress(favourite.kind, favourite.sourceId) && <span className="badge badge-accent">Continue</span>}
       </Link>
       <button
         type="button"

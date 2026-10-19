@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AnimeSummary, DownloadJob, Episode } from "../shared/types";
 import {
   del,
@@ -8,23 +8,28 @@ import {
   request,
   useDownloads,
   useFavourites,
+  useProvider,
+  withProvider,
   type ItemsResponse,
 } from "./api";
+import { BackButton, ProviderPicker, getProgress, safeEntryUrl, setSeenTotal } from "./bits";
 import { Link } from "./router";
 import { Cover, Empty, ErrorView, IconDownload, IconHeart, Loading } from "./ui";
 
 export function AnimeDetailPage({ id }: { id: string }) {
   const [lang, setLang] = useState<"sub" | "dub">("sub");
+  const [provider, setProvider] = useProvider("anime");
   const [limit, setLimit] = useState(100);
   const queryClient = useQueryClient();
 
   const animeQuery = useQuery({
-    queryKey: ["anime", id],
-    queryFn: () => request<AnimeSummary>(`/api/anime/${encodeURIComponent(id)}`),
+    queryKey: ["anime", id, provider],
+    queryFn: () => request<AnimeSummary>(withProvider(`/api/anime/${encodeURIComponent(id)}`, provider)),
   });
   const episodesQuery = useQuery({
-    queryKey: ["anime", id, "episodes"],
-    queryFn: () => request<ItemsResponse<Episode>>(`/api/anime/${encodeURIComponent(id)}/episodes`),
+    queryKey: ["anime", id, "episodes", provider],
+    queryFn: () =>
+      request<ItemsResponse<Episode>>(withProvider(`/api/anime/${encodeURIComponent(id)}/episodes`, provider)),
   });
   const favourites = useFavourites();
   const downloads = useDownloads();
@@ -70,14 +75,42 @@ export function AnimeDetailPage({ id }: { id: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["downloads"] }),
   });
 
+  const downloadAll = useMutation({
+    mutationFn: async (items: Episode[]) => {
+      if (!anime) throw new Error("Anime is not loaded");
+      for (const episode of items) {
+        await post("/api/downloads", {
+          kind: "anime",
+          sourceId: id,
+          itemId: episode.id,
+          title: anime.title,
+          label: `Episode ${episode.number}`,
+          cover: anime.cover,
+          lang,
+        });
+      }
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["downloads"] }),
+  });
+
+  const episodes = episodesQuery.data?.items ?? [];
+  useEffect(() => {
+    if (episodes.length > 0) setSeenTotal("anime", id, episodes.length);
+  }, [id, episodes.length]);
+
   if (animeQuery.isPending) return <Loading label="Loading anime…" />;
   if (animeQuery.isError) return <ErrorView error={animeQuery.error} onRetry={() => animeQuery.refetch()} />;
   if (!anime) return <Empty>Anime not found.</Empty>;
 
-  const episodes = episodesQuery.data?.items ?? [];
+  const latest = episodes[episodes.length - 1];
+  const saved = getProgress("anime", id);
+  const savedIndex = saved ? episodes.findIndex((episode) => episode.id === saved.itemId) : -1;
 
   return (
     <>
+      <div className="back-row">
+        <BackButton to="/anime" />
+      </div>
       <div className="hero">
         <Cover src={anime.cover} alt={`Cover of ${anime.title}`} className="hero-cover" eager />
         <div className="hero-info">
@@ -90,6 +123,23 @@ export function AnimeDetailPage({ id }: { id: string }) {
           </div>
           <p className="description">{anime.description || "No description available."}</p>
           <div className="hero-actions">
+            <ProviderPicker kind="anime" value={provider} onChange={setProvider} />
+            {latest && (
+              <Link
+                className="btn btn-sm"
+                to={withProvider(
+                  `/anime/watch/${latest.id}?lang=${lang}&title=${encodeURIComponent(`Episode ${latest.number}`)}&animeId=${encodeURIComponent(id)}&series=${encodeURIComponent(anime.title)}`,
+                  provider,
+                )}
+              >
+                Latest: Episode {latest.number}
+              </Link>
+            )}
+            {saved && (
+              <Link className="btn btn-sm btn-primary" to={safeEntryUrl(saved.url)}>
+                Continue: {saved.label}
+              </Link>
+            )}
             <div className="segmented" role="group" aria-label="Audio language">
               <button
                 type="button"
@@ -138,29 +188,49 @@ export function AnimeDetailPage({ id }: { id: string }) {
         {episodesQuery.isError && <ErrorView error={episodesQuery.error} onRetry={() => episodesQuery.refetch()} />}
         {episodesQuery.isSuccess && episodes.length === 0 && <Empty>No episodes available.</Empty>}
 
-        {download.isError && (
+        {(download.isError || downloadAll.isError) && (
           <p className="form-error" role="alert">
-            {errorMessage(download.error)}
+            {errorMessage(download.error ?? downloadAll.error)}
           </p>
         )}
 
         {episodes.length > 0 && (
+          <div className="toolbar">
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={downloadAll.isPending}
+              onClick={() => downloadAll.mutate(episodes)}
+            >
+              <IconDownload />
+              {downloadAll.isPending ? "Queuing…" : `Download all (${episodes.length})`}
+            </button>
+          </div>
+        )}
+
+        {episodes.length > 0 && (
           <div className="list">
-            {episodes.slice(0, limit).map((episode) => {
+            {episodes.slice(0, limit).map((episode, index) => {
               const isDownloaded = downloaded.has(episode.id);
               const isDownloading = download.isPending && download.variables?.id === episode.id;
               const title = `Episode ${episode.number}`;
+              const isNew = saved !== null && savedIndex !== -1 && index > savedIndex;
               return (
                 <div className="row" key={episode.id}>
                   <div className="row-main">
-                    <div className="row-title">{title}</div>
+                    <div className="row-title">
+                      {title} {isNew && <span className="badge badge-accent">New</span>}
+                    </div>
                     {episode.title !== title && <div className="row-sub">{episode.title}</div>}
                   </div>
                   <div className="row-actions">
                     {isDownloaded && <span className="badge badge-done">Downloaded</span>}
                     <Link
                       className="btn btn-sm"
-                      to={`/anime/watch/${episode.id}?lang=${lang}&title=${encodeURIComponent(title)}`}
+                      to={withProvider(
+                        `/anime/watch/${episode.id}?lang=${lang}&title=${encodeURIComponent(title)}&animeId=${encodeURIComponent(id)}&series=${encodeURIComponent(anime.title)}`,
+                        provider,
+                      )}
                     >
                       Watch
                     </Link>

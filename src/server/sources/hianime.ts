@@ -184,13 +184,17 @@ export async function getStream(episodeId: string, lang: "sub" | "dub"): Promise
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].startsWith("#EXT-X-STREAM-INF")) continue;
       const next = lines.slice(i + 1).find((l) => l.trim() && !l.startsWith("#"));
-      if (!next) continue;
+      if (!next || next.trim().startsWith("-")) continue;
       const height = Number(lines[i].match(/RESOLUTION=\d+x(\d+)/)?.[1] || 0);
       if (height > bestHeight) {
         bestHeight = height;
         best = absoluteUrl(next.trim(), master.toString());
       }
     }
+
+    const bestUrl = assertPublicHttpsUrl(best);
+    await assertResolvesPublic(bestUrl);
+    best = bestUrl.toString();
 
     const subtitles = (
       await Promise.all(

@@ -1,7 +1,14 @@
 export type Kind = "manga" | "anime";
 export type UserStatus = "pending" | "active" | "blocked";
 
+export interface ContentProviderInfo {
+  id: string;
+  label: string;
+  kind: Kind;
+}
+
 export interface MangaSummary {
+  providerId?: string;
   id: string;
   title: string;
   cover: string | null;
@@ -35,6 +42,7 @@ export interface ChapterPage {
 }
 
 export interface AnimeSummary {
+  providerId?: string;
   id: string;
   title: string;
   cover: string | null;

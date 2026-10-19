@@ -1,7 +1,8 @@
 import type { Context } from "hono";
 import { FFMPEG, UA } from "./config";
 import { contentDisposition } from "./files";
-import { getStream } from "./sources/hianime";
+import type { AnimeStream } from "./sources/hianime";
+import { animeOrdered, tryProviders } from "./sources/registry";
 
 let activeStreams = 0;
 const MAX_STREAMS = Number(process.env.MAX_STREAMS || 3);
@@ -11,14 +12,20 @@ export async function animeStreamResponse(
   episodeId: string,
   lang: "sub" | "dub",
   downloadName?: string,
+  provider?: string,
 ): Promise<Response> {
   if (activeStreams >= MAX_STREAMS) return c.json({ error: "Too many streams playing. Try again shortly." }, 429);
 
-  let stream: Awaited<ReturnType<typeof getStream>>;
+  let stream: AnimeStream;
   try {
-    stream = await getStream(episodeId, lang);
+    ({ result: stream } = await tryProviders(animeOrdered(provider), (p) => p.stream(episodeId, lang)));
   } catch (err: any) {
     return c.json({ error: err?.message || "Could not resolve stream" }, 502);
+  }
+
+  if (!stream.url.startsWith("https://") || stream.url.startsWith("-")) {
+    console.error("[stream] rejected non-https stream url");
+    return c.json({ error: "Could not start the video stream" }, 502);
   }
 
   const args = [
@@ -90,7 +97,8 @@ export async function animeStreamResponse(
       const chunk = await errReader.read();
       if (chunk.value) detail = new TextDecoder().decode(chunk.value).slice(0, 300);
     } catch {}
-    return c.json({ error: `Could not start the video stream${detail ? `: ${detail}` : ""}` }, 502);
+    if (detail) console.error("[stream] ffmpeg failed:", detail);
+    return c.json({ error: "Could not start the video stream" }, 502);
   }
 
   const headers: Record<string, string> = {

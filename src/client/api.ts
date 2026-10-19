@@ -142,8 +142,10 @@ async function savedCopyId(chapter: ChapterPage): Promise<number | null> {
   );
 }
 
-export async function fetchReaderData(chapterId: string): Promise<ReaderData> {
-  const chapter = await request<ChapterPage>(`/api/manga/chapter/${encodeURIComponent(chapterId)}?q=hq`);
+export async function fetchReaderData(chapterId: string, provider = ""): Promise<ReaderData> {
+  const chapter = await request<ChapterPage>(
+    withProvider(`/api/manga/chapter/${encodeURIComponent(chapterId)}?q=hq`, provider),
+  );
 
   const jobId = await savedCopyId(chapter);
   if (jobId === null) return { chapter, blobs: null };
@@ -236,4 +238,45 @@ export function useMangaLang(): [string, (lang: string) => void] {
     }
   };
   return [lang, update];
+}
+
+export function withProvider(url: string, provider: string): string {
+  return provider ? `${url}${url.includes("?") ? "&" : "?"}provider=${encodeURIComponent(provider)}` : url;
+}
+
+export function useProvider(kind: "manga" | "anime"): [string, (value: string) => void] {
+  const key = `animanga:provider:${kind}`;
+  const [value, setValue] = useState(() => {
+    try {
+      return window.localStorage.getItem(key) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  return [
+    value,
+    (next: string) => {
+      setValue(next);
+      try {
+        window.localStorage.setItem(key, next);
+      } catch {
+        // ignore storage access failures
+      }
+    },
+  ];
+}
+
+export interface ContentProviderItem {
+  id: string;
+  label: string;
+  kind: string;
+}
+
+export function useContentProviders(kind: "manga" | "anime") {
+  return useQuery({
+    queryKey: ["content-providers"],
+    queryFn: () => request<{ items: ContentProviderItem[] }>("/api/content-providers"),
+    staleTime: 300_000,
+    select: (data) => data.items.filter((item) => item.kind === kind),
+  });
 }
