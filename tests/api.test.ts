@@ -229,4 +229,22 @@ describe("AniManga API", () => {
     });
     expect(badOrigin.status).toBe(403);
   });
+
+  test("manga tags endpoint validates provider and lists genres", async () => {
+    const missing = await admin.request("/api/manga/tags");
+    expect(missing.status).toBe(400);
+
+    const unknown = await admin.request("/api/manga/tags?provider=nope");
+    expect(unknown.status).toBe(400);
+
+    const anime = await admin.request("/api/manga/tags?provider=hianime");
+    expect(anime.status).toBe(400);
+
+    const pill = await admin.request("/api/manga/tags?provider=mangapill");
+    expect(pill.status).toBe(200);
+    const body = (await pill.json()) as any;
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBeGreaterThan(10);
+    expect(body.items[0]).toMatchObject({ id: expect.any(String), label: expect.any(String) });
+  });
 });

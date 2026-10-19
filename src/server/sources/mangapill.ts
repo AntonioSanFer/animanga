@@ -40,6 +40,22 @@ const STATUS_TO_MP: Record<string, string> = { ongoing: "publishing", completed:
 const STATUS_FROM_MP: Record<string, string> = { publishing: "ongoing", finished: "completed", "on hiatus": "hiatus", discontinued: "cancelled" };
 const DEMOGRAPHIC_TO_GENRE: Record<string, string> = { shounen: "Shounen", shoujo: "Shoujo", josei: "Josei", seinen: "Seinen" };
 
+// ponytail: genre values scraped live from /search (repeated genre= params, verified live).
+export const MANGAPILL_GENRES: { id: string; label: string }[] = [
+  "Action", "Adventure", "Cars", "Comedy", "Dementia", "Demons", "Doujinshi", "Drama",
+  "Ecchi", "Fantasy", "Game", "Gender Bender", "Harem", "Historical", "Horror", "Isekai",
+  "Josei", "Kids", "Magic", "Martial Arts", "Mecha", "Military", "Music", "Mystery",
+  "Parody", "Police", "Psychological", "Romance", "Samurai", "School", "Sci-Fi", "Seinen",
+  "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai", "Slice of Life", "Space", "Sports",
+  "Super Power", "Supernatural", "Thriller", "Tragedy", "Vampire", "Yaoi", "Yuri",
+].map((label) => ({ id: label, label }));
+
+export async function mangaTags(): Promise<{ id: string; label: string }[]> {
+  return MANGAPILL_GENRES;
+}
+
+const GENRE_NAMES = new Set(MANGAPILL_GENRES.map((g) => g.id));
+
 const PAGE_SIZE = 50;
 
 function searchQuery(query: string, page: number, filters: MangaFilters): string {
@@ -48,7 +64,10 @@ function searchQuery(query: string, page: number, filters: MangaFilters): string
   const status = STATUS_TO_MP[filters.status ?? ""];
   if (status) qs.set("status", status);
   const genre = DEMOGRAPHIC_TO_GENRE[filters.demographic ?? ""];
-  if (genre) qs.set("genre", genre);
+  if (genre) qs.append("genre", genre);
+  for (const tag of new Set((filters.tags || []).map((t) => t.trim()))) {
+    if (GENRE_NAMES.has(tag)) qs.append("genre", tag);
+  }
   // ponytail: site has no sort/language params — sort ignored, lang ignored (EN-only).
   if ([...qs].length === 0) qs.set("status", "publishing");
   qs.set("page", String(Math.max(1, page)));

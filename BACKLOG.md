@@ -22,8 +22,19 @@
 - [x] Image-only rail cards: `ShelfCard` renders cover link only (title attr + alt kept); NEW badge overlays top-left; fixed 3/4 aspect.
 - [x] Search bar above shelves on Manga/Anime pages (order: back-row, h1, toolbar, shelves, grid).
 - [x] `FiltersButton` (`<details>` dropdown like `ProviderPicker`) right of Search; language moved inside manga panel.
+## Phase 3 — Browse rails, covers, filters (2026-10-19)
+- [x] Covers on Continue/Recent rails: Reader/Watch fetch series detail (cached 600s server-side) and save its cover in `saveProgress`; null covers keep placeholder.
+- [x] Image-only rail cards: `ShelfCard` renders cover link only (title attr + alt kept); NEW badge overlays top-left; fixed 3/4 aspect.
+- [x] Search bar above shelves on Manga/Anime pages (order: back-row, h1, toolbar, shelves, grid).
+- [x] `FiltersButton` (`<details>` dropdown like `ProviderPicker`) right of Search; language moved inside manga panel.
   - Manga (MangaDex): status (ongoing/completed/hiatus/cancelled), sort (relevance/followedCount/latestUploadedChapter/rating), demographic (shounen/shoujo/josei/seinen) — allowlisted server-side, threaded through registry + source fns.
   - Anime (HiAnime `/filter`, verified via fetched form): type (tv/movie/ova/ona/special/music), status (completed/releasing/not_yet_aired), sort (10 verified values). Skipped: rating/season/language/dates/genre (params visible but mapping unverified).
+- [x] Tag/genre filtering on manga search + popular (per-provider IDs, no cross-provider merging; `GET /api/manga/tags?provider=` + `tags=` allowlisted ≤10, each source allowlists its own; provider switch resets tags; native `<select multiple>` in Filters panel; Auto uses MangaDex list).
+  - MangaDex: live `/manga/tag` (77 tags, cached 7d) → `includedTags[]` + `includedTagsMode=AND`; live-verified Action→30 items.
+  - MangaFire: 53 genres (ids from Keiyoushi `Filters.kt`, tri-state `genres_in[]` verified) → live-verified Shounen→50 items.
+  - WeebCentral: 32 tags (scraped live from `/search`, tri-state `included_tag` verified) → live-verified Action→32 items.
+  - MangaPill: 46 genres (scraped live from `/search`, repeated `genre=` verified; bogus→0 rows so allowlist matters) → live-verified Action→50 items.
+  - Anime verdict: SKIPPED — live `/filter` form (`filter-form`, GET) has selects type/status/rating/score/season/language/dates/sort but NO genre field (genre nav is `/genres/<slug>` sidebar links, different page shape); no verifiable `filter` genre mapping.
 - [x] `bun run typecheck` + `bun test` + `bun run build` green.
 
 ## Runtime download concurrency

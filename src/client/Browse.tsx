@@ -63,17 +63,29 @@ export function BrowseMangaPage() {
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState("");
   const [demographic, setDemographic] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  // ponytail: tag ids are provider-specific — Auto falls back to the main provider's list; switching provider resets tags.
+  const tagProvider = provider || "mangadex";
+  const tagList = useQuery({
+    queryKey: ["manga-tags", tagProvider],
+    queryFn: () =>
+      request<{ items: { id: string; label: string }[] }>(
+        `/api/manga/tags?provider=${encodeURIComponent(tagProvider)}`,
+      ),
+    staleTime: 24 * 3600 * 1000,
+  });
   const search = query.trim();
-  const activeFilters = [status, sort, demographic].filter(Boolean).length;
+  const activeFilters = [status, sort, demographic].filter(Boolean).length + tags.length;
 
   const result = useInfiniteQuery({
-    queryKey: ["manga", "browse", lang, search, provider, status, sort, demographic],
+    queryKey: ["manga", "browse", lang, search, provider, status, sort, demographic, tags.join(",")],
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ lang, page: String(pageParam) });
       if (search) params.set("q", search);
       if (status) params.set("status", status);
       if (sort) params.set("sort", sort);
       if (demographic) params.set("demographic", demographic);
+      if (tags.length > 0) params.set("tags", tags.join(","));
       return request<SearchResponse>(
         withProvider(`/api/manga/${search ? "search" : "popular"}?${params}`, provider),
       );
@@ -172,8 +184,33 @@ export function BrowseMangaPage() {
               <option value="seinen">Seinen</option>
             </select>
           </label>
+          {tagList.data && tagList.data.items.length > 0 && (
+            <label className="filter-field">
+              <span className="muted">Tags</span>
+              <select
+                className="select"
+                multiple
+                size={Math.min(8, tagList.data.items.length)}
+                value={tags}
+                onChange={(event) => setTags([...event.target.selectedOptions].map((o) => o.value))}
+              >
+                {tagList.data.items.map((tag) => (
+                  <option key={tag.id} value={tag.id}>
+                    {tag.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </FiltersButton>
-        <ProviderPicker kind="manga" value={provider} onChange={setProvider} />
+        <ProviderPicker
+          kind="manga"
+          value={provider}
+          onChange={(next) => {
+            setProvider(next);
+            setTags([]);
+          }}
+        />
       </form>
       <ContinueShelf
         kind="manga"

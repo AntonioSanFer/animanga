@@ -16,6 +16,7 @@ import {
   contentProviders,
   knownProvider,
   mangaOrdered,
+  mangaTags,
   tryProviders,
 } from "./sources/registry";
 import { UA, mangaLang } from "./config";
@@ -64,10 +65,17 @@ const ANIME_STATUS = ["completed", "releasing", "not_yet_aired"];
 const ANIME_SORTS = ["updated_date", "added_date", "release_date", "trending", "title_az", "avg_score", "mal_score", "most_viewed", "most_followed", "episode_count"];
 
 function mangaFilters(c: any) {
+  // ponytail: tag ids are provider-specific — raw here, each source allowlists its own; cap 10.
+  const tags = str(c.req.query("tags"), 800)
+    .split(",")
+    .map((t) => t.trim().slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 10);
   return {
     status: oneOf(c.req.query("status"), MANGA_STATUS),
     sort: oneOf(c.req.query("sort"), MANGA_SORTS),
     demographic: oneOf(c.req.query("demographic"), MANGA_DEMOGRAPHICS),
+    ...(tags.length > 0 ? { tags } : {}),
   };
 }
 
@@ -104,6 +112,19 @@ api.get("/providers", (c) =>
 );
 
 api.get("/content-providers", requireUser, (c) => c.json({ items: contentProviders() }));
+
+// ponytail: tag ids differ per provider (UUIDs vs numeric ids vs names) — no cross-provider merging.
+api.get("/manga/tags", requireUser, async (c) => {
+  const provider = str(c.req.query("provider"), 40);
+  if (!provider || !knownProvider("manga", provider)) return c.json({ error: "Unknown provider" }, 400);
+  try {
+    const items = await mangaTags(provider);
+    c.header("Cache-Control", "private, max-age=3600");
+    return c.json({ items });
+  } catch {
+    return c.json({ error: "Tags unavailable" }, 502);
+  }
+});
 
 api.get("/me", requireSession, async (c) => {
   const session = c.get("session");

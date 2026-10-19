@@ -37,6 +37,19 @@ const SORT_TO_WC: Record<string, string> = {
   latestUploadedChapter: "Latest Updates",
   rating: "Popularity",
 };
+// ponytail: tag slugs scraped live from /search (tri-state included_tag/excluded_tag; include verified live).
+export const WEEBCENTRAL_TAGS: { id: string; label: string }[] = [
+  "Action", "Adult", "Adventure", "Comedy", "Doujinshi", "Drama", "Ecchi", "Fantasy",
+  "Harem", "Hentai", "Historical", "Horror", "Isekai", "Josei", "Lolicon", "Mature",
+  "Mecha", "Mystery", "Psychological", "Romance", "Sci-fi", "Seinen", "Shotacon", "Shoujo",
+  "Shounen", "Smut", "Sports", "Supernatural", "Tragedy", "Yaoi", "Yuri", "Other",
+].map((label) => ({ id: label, label }));
+
+export async function mangaTags(): Promise<{ id: string; label: string }[]> {
+  return WEEBCENTRAL_TAGS;
+}
+
+const TAG_IDS = new Set(WEEBCENTRAL_TAGS.map((t) => t.id));
 
 function searchQuery(query: string, page: number, filters: MangaFilters, defaultSort: string): string {
   const limit = 30;
@@ -51,6 +64,9 @@ function searchQuery(query: string, page: number, filters: MangaFilters, default
   });
   const status = STATUS_TO_WC[filters.status ?? ""];
   if (status) qs.append("included_status", status);
+  for (const tag of new Set((filters.tags || []).map((t) => t.trim()))) {
+    if (TAG_IDS.has(tag)) qs.append("included_tag", tag);
+  }
   // ponytail: demographic has no site equivalent (type=Manga/Manhwa/Manhua is not demographic) — ignored.
   return `/search/data?${qs}`;
 }

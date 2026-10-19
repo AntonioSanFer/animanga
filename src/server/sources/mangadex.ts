@@ -66,6 +66,21 @@ function mangaOrder(sort: string | undefined, fallback: string): Params {
   return [[`order[${key}]`, "desc"]];
 }
 
+// ponytail: full tag list is stable — one cached fetch, 7d TTL; doubles as the tag allowlist.
+export async function mangaTags(): Promise<{ id: string; label: string }[]> {
+  const data = await mdGet<any>("/manga/tag", [], 7 * 24 * 3600);
+  return (data.data || [])
+    .map((t: any) => ({ id: t.id, label: t.attributes?.name?.en }))
+    .filter((t: any) => isUuid(t.id) && typeof t.label === "string" && t.label);
+}
+
+async function allowedTags(tags: string[] | undefined): Promise<Params> {
+  if (!tags?.length) return [];
+  const known = new Set((await mangaTags()).map((t) => t.id.toLowerCase()));
+  const valid = [...new Set(tags.map((t) => t.trim()).filter((t) => isUuid(t) && known.has(t.toLowerCase())))];
+  if (!valid.length) return [];
+  return [...valid.map((t): Params[number] => ["includedTags[]", t]), ["includedTagsMode", "AND"]];
+}
 export async function searchManga(query: string, lang: string, page = 1, filters: MangaFilters = {}): Promise<{ items: MangaSummary[]; total: number }> {
   const limit = 30;
   const offset = Math.max(0, (page - 1) * limit);
@@ -78,6 +93,7 @@ export async function searchManga(query: string, lang: string, page = 1, filters
     ["hasAvailableChapters", "true"],
     ["availableTranslatedLanguage[]", lang],
     ...mangaOrder(filters.sort, "relevance"),
+    ...(await allowedTags(filters.tags)),
   ];
   if (MANGA_STATUS.includes(filters.status ?? "")) params.push(["status[]", filters.status!]);
   if (MANGA_DEMOGRAPHICS.includes(filters.demographic ?? "")) params.push(["publicationDemographic[]", filters.demographic!]);
@@ -98,6 +114,7 @@ export async function popularManga(lang: string, page = 1, filters: MangaFilters
     ["hasAvailableChapters", "true"],
     ["availableTranslatedLanguage[]", lang],
     ...mangaOrder(filters.sort, "followedCount"),
+    ...(await allowedTags(filters.tags)),
   ];
   if (MANGA_STATUS.includes(filters.status ?? "")) params.push(["status[]", filters.status!]);
   if (MANGA_DEMOGRAPHICS.includes(filters.demographic ?? "")) params.push(["publicationDemographic[]", filters.demographic!]);

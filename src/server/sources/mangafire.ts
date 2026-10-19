@@ -102,6 +102,34 @@ const SORT_TO_MF: Record<string, string> = {
 };
 // ponytail: site has no demographic field — closest equivalent is these genre ids (verified in extension Filters.kt).
 const DEMOGRAPHIC_TO_GENRE: Record<string, string> = { shounen: "31", shoujo: "30", josei: "15", seinen: "537" };
+// ponytail: genre ids from the Keiyoushi extension Filters.kt (tri-state genres_in[]/genres_ex[], verified live).
+export const MANGAFIRE_GENRES: { id: string; label: string }[] = [
+  { id: "1", label: "Action" }, { id: "268929", label: "Adult" }, { id: "78", label: "Adventure" },
+  { id: "3", label: "Avant Garde" }, { id: "4", label: "Boys Love" }, { id: "5", label: "Comedy" },
+  { id: "268921", label: "Crime" }, { id: "77", label: "Demons" }, { id: "6", label: "Drama" },
+  { id: "7", label: "Ecchi" }, { id: "79", label: "Fantasy" }, { id: "9", label: "Girls Love" },
+  { id: "10", label: "Gourmet" }, { id: "11", label: "Harem" }, { id: "268930", label: "Hentai" },
+  { id: "268922", label: "Historical" }, { id: "530", label: "Horror" }, { id: "13", label: "Isekai" },
+  { id: "531", label: "Iyashikei" }, { id: "15", label: "Josei" }, { id: "532", label: "Kids" },
+  { id: "539", label: "Magic" }, { id: "268923", label: "Magical Girls" }, { id: "533", label: "Mahou Shoujo" },
+  { id: "534", label: "Martial Arts" }, { id: "268931", label: "Mature" }, { id: "19", label: "Mecha" },
+  { id: "268924", label: "Medical" }, { id: "535", label: "Military" }, { id: "21", label: "Music" },
+  { id: "22", label: "Mystery" }, { id: "23", label: "Parody" }, { id: "268925", label: "Philosophical" },
+  { id: "536", label: "Psychological" }, { id: "25", label: "Reverse Harem" }, { id: "26", label: "Romance" },
+  { id: "73", label: "School" }, { id: "28", label: "Sci-Fi" }, { id: "537", label: "Seinen" },
+  { id: "30", label: "Shoujo" }, { id: "31", label: "Shounen" }, { id: "538", label: "Slice of Life" },
+  { id: "268932", label: "Smut" }, { id: "33", label: "Space" }, { id: "34", label: "Sports" },
+  { id: "75", label: "Super Power" }, { id: "268926", label: "Superhero" }, { id: "76", label: "Supernatural" },
+  { id: "37", label: "Suspense" }, { id: "38", label: "Thriller" }, { id: "268927", label: "Tragedy" },
+  { id: "39", label: "Vampire" }, { id: "268928", label: "Wuxia" },
+];
+
+export async function mangaTags(): Promise<{ id: string; label: string }[]> {
+  return MANGAFIRE_GENRES;
+}
+
+const GENRE_IDS = new Set(MANGAFIRE_GENRES.map((g) => g.id));
+
 const LANGS = ["en", "es", "es-la", "fr", "ja", "pt", "pt-br"];
 
 function mfLang(lang: string): string {
@@ -125,6 +153,10 @@ function listQuery(query: string, page: number, filters: MangaFilters, fallbackS
   if (status) params.push(["statuses[]", status]);
   const genre = DEMOGRAPHIC_TO_GENRE[filters.demographic ?? ""];
   if (genre) params.push(["genres_in[]", genre]);
+  // ponytail: explicit tags stack with the demographic shortcut (both feed genres_in[], API ANDs them).
+  for (const tag of new Set((filters.tags || []).map((t) => t.trim()))) {
+    if (GENRE_IDS.has(tag)) params.push(["genres_in[]", tag]);
+  }
   // ponytail: site needs no language param on title lists — lang only scopes chapters.
   return params;
 }

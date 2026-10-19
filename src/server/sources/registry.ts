@@ -9,6 +9,8 @@ export interface MangaFilters {
   status?: string;
   sort?: string;
   demographic?: string;
+  // ponytail: provider-specific tag/genre ids; each source allowlists its own (ids differ per site, no cross-provider merging).
+  tags?: string[];
 }
 
 export interface AnimeFilters {
@@ -115,6 +117,22 @@ export function animeOrdered(requested?: string): AnimeProvider[] {
 export function knownProvider(kind: "manga" | "anime", id: string): boolean {
   const list = kind === "manga" ? mangaProviders : animeProviders;
   return list.some((p) => p.id === id);
+}
+
+// ponytail: tag ids are provider-specific — no merging; unknown provider throws (400 at the route).
+export async function mangaTags(providerId: string): Promise<{ id: string; label: string }[]> {
+  switch (providerId) {
+    case "mangadex":
+      return mangadex.mangaTags();
+    case "weebcentral":
+      return weebcentral.mangaTags();
+    case "mangapill":
+      return mangapill.mangaTags();
+    case "mangafire":
+      return mangafire.mangaTags();
+    default:
+      throw new Error("Unknown provider");
+  }
 }
 
 // ponytail: sequential fallback; throws last error when every provider fails.
