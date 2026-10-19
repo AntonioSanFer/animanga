@@ -1,0 +1,33 @@
+services:
+  animanga:
+    build: .
+    container_name: animanga
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: animanga
+  title:
+    en_us: AniManga
+  category: Media
+  port_map: "3000"
+  scheme: http
+  description:
+    en_us: Self-hosted manga and anime browser with favourites, offline downloads and per-user access control.
+  icon: ""

@@ -1,0 +1,30 @@
+{
+  "name": "animanga",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run build && bun --watch src/server/index.ts",
+    "dev:client": "bun build index.html --outdir dist --watch",
+    "dev:server": "bun --watch src/server/index.ts",
+    "build": "bun run clean && bun build index.html --outdir dist --minify",
+    "clean": "bun -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "start": "bun src/server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.104.4",
+    "better-auth": "latest",
+    "fflate": "^0.8.2",
+    "hono": "^4.7.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules
+data
+dist
+.env
+.env.*
+.git
+.gitignore
+*.log
+.pando
+tests

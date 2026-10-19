@@ -1,0 +1,522 @@
+import { Hono } from "hono";
+import { AUTH_PROVIDERS, callbackUrl, passwordAuthEnabled } from "./auth";
+import { countActiveAdmins, findAppUser, requireAdmin, requireSession, requireUser, type AppEnv } from "./access";
+import { db, findDoneDownloadId, getDownload } from "./db";
+import { findCachedImage, IMAGE_ITEM_LIMIT, saveCachedImage } from "./imageCache";
+import { downloadName, chapterDownloadName, buildMangaZip, createDownload, deleteDownload } from "./downloads";
+import { contentDisposition, serveFile } from "./files";
+import { animeStreamResponse } from "./media";
+import {
+  coverUrl,
+  getChapter,
+  getChapterImage,
+  getChapters,
+  getManga,
+  popularManga,
+  searchManga,
+} from "./sources/mangadex";
+import { getAnime, getEpisodes, getStream, getSubtitle, popularAnime, searchAnime } from "./sources/hianime";
+import { UA, mangaLang } from "./config";
+import { isAnimeId, assertPublicHttpsUrl, assertResolvesPublic, isUuid, sanitizeFilename } from "./util";
+import type { DownloadJob, Kind } from "../shared/types";
+
+export const api = new Hono<AppEnv>();
+
+function obj(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function str(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function intParam(value: string, fallback = 1, max = 100_000): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), max) : fallback;
+}
+
+function validKind(v: string): v is Kind {
+  return v === "manga" || v === "anime";
+}
+
+function validCover(v: unknown): string | null {
+  const s = str(v, 2000);
+  return s.startsWith("/api/img/") ? s : null;
+}
+
+function validEmail(v: string): boolean {
+  return v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
+function jobForItem(kind: Kind, itemId: string, lang?: string | null): DownloadJob | null {
+  const id = findDoneDownloadId(kind, itemId, lang);
+  return id === null ? null : getDownload(id);
+}
+
+api.get("/health", (c) => c.json({ ok: true }));
+
+api.get("/providers", (c) =>
+  c.json({
+    providers: AUTH_PROVIDERS,
+    password: passwordAuthEnabled,
+    callbacks: AUTH_PROVIDERS.map((p) => ({ ...p, url: callbackUrl(p.id) })),
+  }),
+);
+
+api.get("/me", requireSession, async (c) => {
+  const session = c.get("session");
+  const email = session.user.email?.trim().toLowerCase();
+  if (!email) return c.json({ error: "Your identity provider did not return an email address." }, 403);
+  const { upsertAppUser } = await import("./db");
+  const appUser = upsertAppUser(email, session.user.name || null);
+  return c.json({
+    user: { email, name: session.user.name || null, image: session.user.image || null },
+    appUser,
+  });
+});
+
+// ---------- favourites ----------
+
+api.get("/favourites", requireUser, (c) => {
+  const email = c.get("appUser").email;
+  const rows = db
+    .query("SELECT kind, source_id, title, cover, created_at FROM favourites WHERE email = ? ORDER BY created_at DESC")
+    .all(email) as any[];
+  return c.json({
+    items: rows.map((r) => ({
+      kind: r.kind,
+      sourceId: r.source_id,
+      title: r.title,
+      cover: r.cover,
+      createdAt: r.created_at,
+    })),
+  });
+});
+
+api.post("/favourites", requireUser, async (c) => {
+  const body = obj(await c.req.json().catch(() => null));
+  const kind = str(body.kind, 10);
+  const sourceId = str(body.sourceId, 200);
+  const title = str(body.title, 300);
+  const cover = validCover(body.cover);
+  if (!validKind(kind) || !title) return c.json({ error: "Invalid favourite" }, 400);
+  if (kind === "manga" && !isUuid(sourceId)) return c.json({ error: "Invalid manga id" }, 400);
+  if (kind === "anime" && !isAnimeId(sourceId)) return c.json({ error: "Invalid anime id" }, 400);
+
+  db.query(
+    "INSERT OR IGNORE INTO favourites (email, kind, source_id, title, cover, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(c.get("appUser").email, kind, sourceId, title, cover, Date.now());
+  return c.json({ ok: true }, 201);
+});
+
+api.delete("/favourites/:kind/:sourceId", requireUser, (c) => {
+  const kind = c.req.param("kind");
+  if (!validKind(kind)) return c.json({ error: "Invalid kind" }, 400);
+  db.query("DELETE FROM favourites WHERE email = ? AND kind = ? AND source_id = ?").run(
+    c.get("appUser").email,
+    kind,
+    c.req.param("sourceId"),
+  );
+  return c.json({ ok: true });
+});
+
+// ---------- manga ----------
+
+api.get("/manga/search", requireUser, async (c) => {
+  const q = str(c.req.query("q"), 200);
+  const lang = mangaLang(c.req.query("lang"));
+  const page = intParam(c.req.query("page") || "1", 1, 500);
+  const data = await searchManga(q, lang, page);
+  c.header("Cache-Control", "private, max-age=30");
+  return c.json(data);
+});
+
+api.get("/manga/popular", requireUser, async (c) => {
+  const lang = mangaLang(c.req.query("lang"));
+  const items = await popularManga(lang);
+  c.header("Cache-Control", "private, max-age=120");
+  return c.json({ items });
+});
+
+api.get("/manga/chapter/:chapterId", requireUser, async (c) => {
+  const chapterId = c.req.param("chapterId");
+  if (!isUuid(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
+  const quality = c.req.query("q") === "hq" ? "data" : "data-saver";
+  const chapter = await getChapter(chapterId, quality);
+  return c.json({ ...chapter, downloadId: findDoneDownloadId("manga", chapterId) });
+});
+
+let activeZips = 0;
+api.get("/manga/chapter/:chapterId/file", requireUser, async (c) => {
+  const chapterId = c.req.param("chapterId");
+  if (!isUuid(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
+
+  const existing = jobForItem("manga", chapterId);
+  if (existing?.status === "done") {
+    const row = db.query("SELECT file_path FROM downloads WHERE id = ?").get(existing.id) as { file_path: string } | null;
+    if (row?.file_path) {
+      return serveFile(c, row.file_path, { downloadName: downloadName(existing, "cbz") });
+    }
+  }
+
+  if (activeZips >= 2) return c.json({ error: "Too many chapter downloads in progress" }, 429);
+  activeZips++;
+  try {
+    const name = await chapterDownloadName(chapterId);
+    const data = await buildMangaZip(chapterId, c.req.raw.signal);
+    return new Response(data as unknown as BodyInit, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.comicbook+zip",
+        "Content-Disposition": contentDisposition(name),
+        "Content-Length": String(data.length),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  } finally {
+    activeZips--;
+  }
+});
+
+api.get("/manga/:id/chapters", requireUser, async (c) => {
+  const id = c.req.param("id");
+  if (!isUuid(id)) return c.json({ error: "Invalid manga id" }, 400);
+  const lang = mangaLang(c.req.query("lang"));
+  c.header("Cache-Control", "private, max-age=120");
+  return c.json({ items: await getChapters(id, lang), lang });
+});
+
+api.get("/manga/:id", requireUser, async (c) => {
+  const id = c.req.param("id");
+  if (!isUuid(id)) return c.json({ error: "Invalid manga id" }, 400);
+  const lang = mangaLang(c.req.query("lang"));
+  c.header("Cache-Control", "private, max-age=300");
+  return c.json({ ...(await getManga(id)), lang });
+});
+
+api.get("/img/manga/:id/:file", requireUser, async (c) => {
+  const size = c.req.query("size") === "512" ? "512" : "256";
+  const id = c.req.param("id");
+  let url: string;
+  try {
+    url = coverUrl(id, c.req.param("file"), size);
+  } catch {
+    return c.json({ error: "Invalid cover" }, 400);
+  }
+  return proxyImage(c, url, "public, max-age=604800, stale-while-revalidate=86400");
+});
+
+api.get("/img/page/:chapterId/:index", requireUser, async (c) => {
+  const chapterId = c.req.param("chapterId");
+  if (!isUuid(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
+  const index = intParam(c.req.param("index"), -1, 10_000);
+  if (index < 0) return c.json({ error: "Invalid page" }, 400);
+  const quality = c.req.query("q") === "hq" ? "data" : "data-saver";
+  try {
+    const image = await getChapterImage(chapterId, index, quality);
+    return proxyImage(c, image.url, "public, max-age=31536000, immutable");
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Image unavailable" }, 404);
+  }
+});
+
+// ---------- anime ----------
+
+api.get("/anime/search", requireUser, async (c) => {
+  const q = str(c.req.query("q"), 200);
+  const page = intParam(c.req.query("page") || "1", 1, 100);
+  const items = await searchAnime(q, page);
+  c.header("Cache-Control", "private, max-age=60");
+  return c.json({ items });
+});
+
+api.get("/anime/popular", requireUser, async (c) => {
+  const items = await popularAnime();
+  c.header("Cache-Control", "private, max-age=300");
+  return c.json({ items });
+});
+
+api.get("/anime/stream/:episodeId", requireUser, async (c) => {
+  const episodeId = c.req.param("episodeId");
+  if (!/^\d{1,10}$/.test(episodeId)) return c.json({ error: "Invalid episode id" }, 400);
+  const lang = c.req.query("lang") === "dub" ? "dub" : "sub";
+  const download = c.req.query("download") === "1";
+  const name = download ? `${sanitizeFilename(str(c.req.query("name"), 140), `episode-${episodeId}`)}.mp4` : undefined;
+
+  const existing = jobForItem("anime", episodeId, lang);
+  if (existing?.status === "done") {
+    const row = db.query("SELECT file_path FROM downloads WHERE id = ?").get(existing.id) as { file_path: string } | null;
+    if (row?.file_path) return serveFile(c, row.file_path, { downloadName: name });
+  }
+
+  return animeStreamResponse(c, episodeId, lang, name);
+});
+
+api.get("/anime/subtitle/:episodeId", requireUser, async (c) => {
+  const episodeId = c.req.param("episodeId");
+  if (!/^\d{1,10}$/.test(episodeId)) return c.json({ error: "Invalid episode id" }, 400);
+  const lang = c.req.query("lang") === "dub" ? "dub" : "sub";
+  try {
+    const sub = await getSubtitle(episodeId, lang);
+    if (!sub) return c.body(null, 404);
+    return new Response(sub.body, {
+      headers: { "Content-Type": "text/vtt; charset=utf-8", "Cache-Control": "private, max-age=300" },
+    });
+  } catch {
+    return c.body(null, 404);
+  }
+});
+
+api.get("/anime/:id/episodes", requireUser, async (c) => {
+  const id = c.req.param("id");
+  if (!isAnimeId(id)) return c.json({ error: "Invalid anime id" }, 400);
+  c.header("Cache-Control", "private, max-age=600");
+  return c.json({ items: await getEpisodes(id) });
+});
+
+api.get("/anime/:id", requireUser, async (c) => {
+  const id = c.req.param("id");
+  if (!isAnimeId(id)) return c.json({ error: "Invalid anime id" }, 400);
+  c.header("Cache-Control", "private, max-age=600");
+  return c.json(await getAnime(id));
+});
+
+api.get("/img/anime", requireUser, async (c) => {
+  let url: URL;
+  try {
+    url = new URL(str(c.req.query("u"), 2000));
+  } catch {
+    return c.json({ error: "Invalid image" }, 400);
+  }
+  const host = url.hostname.toLowerCase();
+  const allowed =
+    url.protocol === "https:" &&
+    (host === "hianime.at" || host.endsWith(".hianime.at") || host === "anipixcdn.co" || host.endsWith(".anipixcdn.co"));
+  if (!allowed) return c.json({ error: "Invalid image host" }, 400);
+  return proxyImage(c, url.toString(), "public, max-age=604800, stale-while-revalidate=86400", "https://hianime.at/");
+});
+
+// ---------- downloads ----------
+
+api.get("/downloads", requireUser, (c) => {
+  const rows = db.query("SELECT * FROM downloads ORDER BY created_at DESC LIMIT 500").all() as any[];
+  return c.json({
+    items: rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      sourceId: r.source_id,
+      itemId: r.item_id,
+      title: r.title,
+      label: r.label,
+      cover: r.cover,
+      lang: r.lang,
+      status: r.status,
+      progress: r.progress,
+      size: r.size,
+      error: r.error,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    })),
+  });
+});
+
+api.post("/downloads", requireUser, async (c) => {
+  const body = obj(await c.req.json().catch(() => null));
+  const kind = str(body.kind, 10);
+  const sourceId = str(body.sourceId, 200);
+  const itemId = str(body.itemId, 200);
+  const title = str(body.title, 300);
+  const label = str(body.label, 120);
+  const cover = validCover(body.cover);
+  const lang = str(body.lang, 20) || null;
+
+  if (!validKind(kind) || !title || !label) return c.json({ error: "Invalid download request" }, 400);
+  if (kind === "manga" && (!isUuid(sourceId) || !isUuid(itemId))) return c.json({ error: "Invalid manga ids" }, 400);
+  if (kind === "anime" && (!isAnimeId(sourceId) || !/^\d{1,10}$/.test(itemId))) {
+    return c.json({ error: "Invalid anime ids" }, 400);
+  }
+  if (kind === "anime" && lang !== "sub" && lang !== "dub") return c.json({ error: "Invalid language" }, 400);
+
+  try {
+    return c.json(createDownload({ kind, sourceId, itemId, title, label, cover, lang: kind === "anime" ? lang : null }), 201);
+  } catch (err: any) {
+    return c.json({ error: err?.message || "Could not queue download" }, 429);
+  }
+});
+
+api.get("/downloads/:id/file", requireUser, (c) => {
+  const id = intParam(c.req.param("id"), -1);
+  const row = db.query("SELECT * FROM downloads WHERE id = ?").get(id) as any;
+  if (!row || row.status !== "done" || !row.file_path) return c.json({ error: "File not ready" }, 404);
+  const job = { ...row, sourceId: row.source_id, itemId: row.item_id, createdAt: row.created_at, updatedAt: row.updated_at } as DownloadJob;
+  const ext = String(row.file_path).split(".").pop() || "bin";
+  const wantsDownload = c.req.query("dl") === "1" || row.kind === "manga";
+  return serveFile(c, row.file_path, { downloadName: wantsDownload ? downloadName(job, ext) : undefined });
+});
+
+api.delete("/downloads/:id", requireAdmin, (c) => {
+  const id = intParam(c.req.param("id"), -1);
+  if (id < 0) return c.json({ error: "Invalid id" }, 400);
+  deleteDownload(id);
+  return c.json({ ok: true });
+});
+
+// ---------- admin ----------
+
+api.get("/admin/users", requireAdmin, (c) => {
+  const rows = db
+    .query(
+      `SELECT u.*, (SELECT COUNT(*) FROM favourites f WHERE f.email = u.email) AS favourites
+       FROM app_users u ORDER BY u.created_at ASC`,
+    )
+    .all() as any[];
+  return c.json({
+    items: rows.map((r) => ({
+      email: r.email,
+      name: r.name,
+      role: r.role,
+      status: r.status,
+      createdAt: r.created_at,
+      lastLoginAt: r.last_login_at,
+      favourites: r.favourites,
+    })),
+  });
+});
+
+api.post("/admin/users", requireAdmin, async (c) => {
+  const body = obj(await c.req.json().catch(() => null));
+  const email = str(body.email, 254).toLowerCase();
+  const role = str(body.role, 10) === "admin" ? "admin" : "user";
+  if (!validEmail(email)) return c.json({ error: "Enter a valid email address" }, 400);
+
+  const existing = findAppUser(email);
+  if (existing?.role === "admin" && existing.status === "active" && role !== "admin" && countActiveAdmins() <= 1) {
+    return c.json({ error: "You cannot demote the last admin" }, 400);
+  }
+
+  if (existing) {
+    db.query("UPDATE app_users SET role = ?, status = 'active' WHERE email = ?").run(role, email);
+  } else {
+    db.query("INSERT INTO app_users (email, name, role, status, created_at) VALUES (?, NULL, ?, 'active', ?)").run(
+      email,
+      role,
+      Date.now(),
+    );
+  }
+  return c.json({ ok: true, user: findAppUser(email) }, 201);
+});
+
+api.patch("/admin/users/:email", requireAdmin, async (c) => {
+  const email = decodeURIComponent(c.req.param("email")).toLowerCase();
+  const body = obj(await c.req.json().catch(() => null));
+  const target = findAppUser(email);
+  if (!target) return c.json({ error: "User not found" }, 404);
+  if (target.email === c.get("appUser").email) return c.json({ error: "You cannot change your own access" }, 400);
+
+  const role = body.role === undefined ? target.role : str(body.role, 10);
+  const status = body.status === undefined ? target.status : str(body.status, 10);
+  if (role !== "admin" && role !== "user") return c.json({ error: "Invalid role" }, 400);
+  if (status !== "active" && status !== "pending" && status !== "blocked") return c.json({ error: "Invalid status" }, 400);
+  if (target.role === "admin" && target.status === "active" && (role !== "admin" || status !== "active") && countActiveAdmins() <= 1) {
+    return c.json({ error: "You cannot remove the last admin" }, 400);
+  }
+
+  db.query("UPDATE app_users SET role = ?, status = ? WHERE email = ?").run(role, status, email);
+  return c.json({ ok: true, user: findAppUser(email) });
+});
+
+api.delete("/admin/users/:email", requireAdmin, (c) => {
+  const email = decodeURIComponent(c.req.param("email")).toLowerCase();
+  const target = findAppUser(email);
+  if (!target) return c.json({ error: "User not found" }, 404);
+  if (target.email === c.get("appUser").email) return c.json({ error: "You cannot remove yourself" }, 400);
+  if (target.role === "admin" && target.status === "active" && countActiveAdmins() <= 1) {
+    return c.json({ error: "You cannot remove the last admin" }, 400);
+  }
+  db.query("DELETE FROM favourites WHERE email = ?").run(email);
+  db.query("DELETE FROM app_users WHERE email = ?").run(email);
+  return c.json({ ok: true });
+});
+
+api.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+
+function imageResponse(path: string, type: string, cacheControl: string): Response {
+  return new Response(Bun.file(path), {
+    status: 200,
+    headers: {
+      "Content-Type": type,
+      "Cache-Control": cacheControl,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+async function proxyImage(c: any, url: string, cacheControl: string, referer?: string): Promise<Response> {
+  const cached = findCachedImage(url);
+  if (cached) return imageResponse(cached.path, cached.type, cacheControl);
+
+  let upstream: Response | null = null;
+  try {
+    let target = assertPublicHttpsUrl(url);
+    const headers = { "User-Agent": referer ? UA : "AniManga/1.0", ...(referer ? { Referer: referer } : {}) };
+    for (let hop = 0; hop < 4; hop++) {
+      await assertResolvesPublic(target);
+      const res = await fetch(target, { headers, signal: AbortSignal.timeout(30_000), redirect: "manual" });
+      if (res.status < 300 || res.status >= 400) {
+        upstream = res;
+        break;
+      }
+      const location = res.headers.get("location");
+      if (!location) break;
+      target = assertPublicHttpsUrl(new URL(location, target).toString());
+    }
+  } catch {
+    return c.body(null, 502);
+  }
+  if (!upstream) return c.body(null, 502);
+  if (!upstream.ok) return c.body(null, upstream.status === 404 ? 404 : 502);
+  const type = upstream.headers.get("content-type") || "application/octet-stream";
+  if (!type.startsWith("image/")) return c.body(null, 502);
+
+  const length = Number(upstream.headers.get("content-length") || 0);
+  if (length > IMAGE_ITEM_LIMIT) return c.body(null, 502);
+
+  let bytes: Uint8Array;
+  try {
+    const reader = upstream.body?.getReader();
+    if (!reader) return c.body(null, 502);
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > IMAGE_ITEM_LIMIT) {
+        await reader.cancel();
+        return c.body(null, 502);
+      }
+      chunks.push(value);
+    }
+    bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+  } catch {
+    return c.body(null, 502);
+  }
+  if (bytes.length === 0) return c.body(null, 502);
+  await saveCachedImage(url, bytes, type);
+
+  return new Response(bytes as unknown as BodyInit, {
+    status: 200,
+    headers: {
+      "Content-Type": type,
+      "Cache-Control": cacheControl,
+      "Content-Length": String(bytes.length),
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
