@@ -185,22 +185,34 @@ export function BrowseMangaPage() {
             </select>
           </label>
           {tagList.data && tagList.data.items.length > 0 && (
-            <label className="filter-field">
-              <span className="muted">Tags</span>
-              <select
-                className="select"
-                multiple
-                size={Math.min(8, tagList.data.items.length)}
-                value={tags}
-                onChange={(event) => setTags([...event.target.selectedOptions].map((o) => o.value))}
-              >
-                {tagList.data.items.map((tag) => (
-                  <option key={tag.id} value={tag.id}>
-                    {tag.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="filter-field">
+              <span className="muted">
+                Tags{tags.length > 0 ? ` (${tags.length})` : ""}
+              </span>
+              <div className="tag-chips" role="group" aria-label="Tags">
+                {tagList.data.items.map((tag) => {
+                  const on = tags.includes(tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      aria-pressed={on}
+                      className={on ? "tag-chip active" : "tag-chip"}
+                      onClick={() =>
+                        setTags((prev) => (on ? prev.filter((id) => id !== tag.id) : [...prev, tag.id]))
+                      }
+                    >
+                      {tag.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {tags.length > 0 && (
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setTags([])}>
+                  Clear tags
+                </button>
+              )}
+            </div>
           )}
         </FiltersButton>
         <ProviderPicker

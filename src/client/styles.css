@@ -561,7 +561,7 @@ option {
   left: auto;
   right: 0;
   gap: 10px;
-  min-width: 210px;
+  min-width: 280px;
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
   padding: 10px;
@@ -577,6 +577,34 @@ option {
 .filter-field .select {
   width: 100%;
   height: 34px;
+}
+
+/* ponytail: toggle chips beat <select multiple> on touch — no ctrl-click needed. */
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.tag-chip {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tag-chip.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text);
+  font-weight: 600;
 }
 
 .row {
