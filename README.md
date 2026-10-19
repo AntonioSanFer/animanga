@@ -48,7 +48,20 @@ services:
       - "3000:3000"
     environment:
       - BETTER_AUTH_URL=http://192.168.1.100:3000
-      - AUTH_PASSWORD_ENABLED=1
+      # Optional: if omitted, a secret is generated in /app/data/secret
+      # - BETTER_AUTH_SECRET=REPLACE_WITH_OPENSSL_RAND_HEX_32
+      - AUTH_PASSWORD_ENABLED=0
+      # Generic OIDC (Authentik, Pocket ID, Keycloak, Authelia, ...)
+      - OIDC_ISSUER=https://auth.example.com/application/o/animanga/
+      - OIDC_CLIENT_ID=REPLACE_ME
+      - OIDC_CLIENT_SECRET=REPLACE_ME
+      - OIDC_NAME=SSO
+      # Optional social logins
+      # - GITHUB_CLIENT_ID=
+      # - GITHUB_CLIENT_SECRET=
+      # - GOOGLE_CLIENT_ID=
+      # - GOOGLE_CLIENT_SECRET=
+      - TZ=Europe/Madrid
     volumes:
       - /DATA/AppData/animanga:/app/data
     security_opt:
@@ -75,7 +88,9 @@ x-casaos:
 ```
 
 - Replace `BETTER_AUTH_URL` with the URL you actually open (LAN IP or reverse-proxied https URL).
-- Set `AUTH_PASSWORD_ENABLED=1` for the first login, then back to `0` if you configure SSO.
+- Register the callback URL in your IdP: `<BETTER_AUTH_URL>/api/auth/callback/oidc` (github/google for those providers).
+- For password-only setup, remove the OIDC lines and set `AUTH_PASSWORD_ENABLED=1`. Set it back to `0` after creating the admin.
+- `OIDC_DISCOVERY_URL` overrides `OIDC_ISSUER/.well-known/openid-configuration` if your IdP needs it.
 - The container runs as uid 1000. If it cannot write to the volume, run:
   `sudo chown -R 1000:1000 /DATA/AppData/animanga`
 - To use another host port, change both `"3000:3000"` and `port_map`, and update `BETTER_AUTH_URL`.
