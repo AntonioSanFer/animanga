@@ -5,7 +5,7 @@ import { AdminPage } from "./Admin";
 import { AnimeDetailPage } from "./AnimeDetail";
 import { Login, Pending } from "./Accounts";
 import { signOutAndReload } from "./auth";
-import { BrowseAnimePage, BrowseMangaPage, HomePage } from "./Browse";
+import { BrowseAnimePage, BrowseMangaPage } from "./Browse";
 import { DownloadsPage } from "./Downloads";
 import { FavouritesPage } from "./Favourites";
 import { MangaDetailPage } from "./MangaDetail";
@@ -15,7 +15,6 @@ import { ErrorView, Loading } from "./ui";
 import { WatchPage } from "./Watch";
 
 type Route =
-  | { name: "home" }
   | { name: "browse-manga" }
   | { name: "browse-anime" }
   | { name: "manga"; id: string }
@@ -31,7 +30,7 @@ function matchRoute(pathname: string): Route {
   const parts = pathname.split("/").filter(Boolean);
   const [first, second, third] = parts;
 
-  if (parts.length === 0) return { name: "home" };
+  if (parts.length === 0) return { name: "browse-manga" };
 
   if (first === "manga") {
     if (parts.length === 1) return { name: "browse-manga" };
@@ -79,8 +78,6 @@ function NotFound() {
 
 function renderPage(route: Route): ReactNode {
   switch (route.name) {
-    case "home":
-      return <HomePage />;
     case "browse-manga":
       return <BrowseMangaPage />;
     case "browse-anime":
@@ -113,7 +110,7 @@ function Shell({
   pathname: string;
   children: ReactNode;
 }) {
-  const mangaActive = pathname === "/manga" || pathname.startsWith("/manga/");
+  const mangaActive = pathname === "/" || pathname === "/manga" || pathname.startsWith("/manga/");
   const animeActive = pathname === "/anime" || pathname.startsWith("/anime/");
 
   return (
@@ -124,9 +121,6 @@ function Shell({
             AniManga
           </Link>
           <nav className="nav" aria-label="Main">
-            <Link to="/" aria-current={pathname === "/" ? "page" : undefined}>
-              Home
-            </Link>
             <Link to="/manga" aria-current={mangaActive ? "page" : undefined}>
               Manga
             </Link>

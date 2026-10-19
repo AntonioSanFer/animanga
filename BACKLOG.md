@@ -12,8 +12,8 @@
 - [x] Prev/next chapter-episode buttons on Reader + Watch screens.
 - [x] Remember last chapter/episode per series + "Continue reading/watching" resume button. (localStorage, no DB.)
 - [x] "New chapter available" badge on series card/main screen when new content lands after completion.
-- [x] "Continue watching/reading" section (unfinished + series with new chapters).
-- [x] "Recent activity" section on main tab.
+- [x] "Continue watching/reading" as horizontal scrollable + expandable rail on Manga/Anime screens (Home tab removed; `/` renders Manga).
+- [x] "Recent activity" as second rail per screen.
 - [x] Back nav button on main manga/anime screens.
 
 ## Runtime download concurrency

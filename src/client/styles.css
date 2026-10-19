@@ -522,6 +522,21 @@ option {
   background: var(--surface);
 }
 
+/* Horizontal continue rail (expanded state reuses .grid) */
+
+.rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+}
+
+.rail-card {
+  flex: 0 0 132px;
+  scroll-snap-align: start;
+}
+
 .row {
   display: flex;
   align-items: center;

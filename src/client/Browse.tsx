@@ -77,6 +77,19 @@ export function BrowseMangaPage() {
         <BackButton to="/" />
       </div>
       <h1>Manga</h1>
+      <ContinueShelf
+        kind="manga"
+        getTotal={async (seriesId) =>
+          (
+            await request<ItemsResponse<{ id: string }>>(
+              withProvider(
+                `/api/manga/${encodeURIComponent(seriesId)}/chapters?lang=${encodeURIComponent(lang)}`,
+                provider,
+              ),
+            )
+          ).items.length
+        }
+      />
       <form className="toolbar" role="search" onSubmit={submit}>
         <label className="search-box">
           <IconSearch />
@@ -189,6 +202,16 @@ export function BrowseAnimePage() {
         <BackButton to="/" />
       </div>
       <h1>Anime</h1>
+      <ContinueShelf
+        kind="anime"
+        getTotal={async (seriesId) =>
+          (
+            await request<ItemsResponse<{ id: string }>>(
+              withProvider(`/api/anime/${encodeURIComponent(seriesId)}/episodes`, provider),
+            )
+          ).items.length
+        }
+      />
       <form className="toolbar" role="search" onSubmit={submit}>
         <label className="search-box">
           <IconSearch />
@@ -223,35 +246,48 @@ export function BrowseAnimePage() {
   );
 }
 
-export function HomePage() {
-  const [lang] = useMangaLang();
-  const [mangaProvider] = useProvider("manga");
-  const [animeProvider] = useProvider("anime");
-  // ponytail: remounts on each visit, so a plain memo read is fresh enough.
-  const progress = useMemo(() => getAllProgress().slice(0, 12), []);
-  const activity = useMemo(() => getActivity().slice(0, 10), []);
+function ShelfCard({
+  url,
+  cover,
+  title,
+  sub,
+  isNew,
+  action,
+}: {
+  url: string;
+  cover: string | null;
+  title: string;
+  sub: string;
+  isNew: boolean;
+  action: string;
+}) {
+  return (
+    <div className="rail-card">
+      <Link to={url} className="card">
+        <Cover src={cover} alt={`Cover of ${title}`} />
+        <span className="card-title">{title}</span>
+        <span className="card-meta">{sub}</span>
+        {isNew && <span className="badge badge-accent">New</span>}
+        <span className="btn btn-sm">{action}</span>
+      </Link>
+    </div>
+  );
+}
+
+function ContinueShelf({ kind, getTotal }: { kind: "manga" | "anime"; getTotal: (seriesId: string) => Promise<number> }) {
+  const entries = useMemo(() => getAllProgress().filter((entry) => entry.kind === kind).slice(0, 12), [kind]);
+  const recent = useMemo(() => getActivity().filter((entry) => entry.kind === kind).slice(0, 12), [kind]);
+  const [expanded, setExpanded] = useState(false);
+  const [expandedRecent, setExpandedRecent] = useState(false);
 
   const totals = useQuery({
-    queryKey: ["home-new", lang, progress.map((entry) => `${entry.kind}:${entry.seriesId}`).join(",")],
+    queryKey: ["shelf-new", kind, entries.map((entry) => entry.seriesId).join(",")],
     queryFn: async () => {
       const out: Record<string, number> = {};
       await Promise.all(
-        progress.map(async (entry) => {
+        entries.map(async (entry) => {
           try {
-            if (entry.kind === "manga") {
-              const res = await request<ItemsResponse<{ id: string }>>(
-                withProvider(
-                  `/api/manga/${encodeURIComponent(entry.seriesId)}/chapters?lang=${encodeURIComponent(lang)}`,
-                  mangaProvider,
-                ),
-              );
-              out[`${entry.kind}:${entry.seriesId}`] = res.items.length;
-            } else {
-              const res = await request<ItemsResponse<{ id: string }>>(
-                withProvider(`/api/anime/${encodeURIComponent(entry.seriesId)}/episodes`, animeProvider),
-              );
-              out[`${entry.kind}:${entry.seriesId}`] = res.items.length;
-            }
+            out[entry.seriesId] = await getTotal(entry.seriesId);
           } catch {
             // offline item — no NEW badge
           }
@@ -259,68 +295,58 @@ export function HomePage() {
       );
       return out;
     },
+    enabled: entries.length > 0,
   });
 
+  if (entries.length === 0 && recent.length === 0) return null;
   return (
     <>
-      <h1>Home</h1>
-      <section className="section">
-        <div className="section-head">
-          <h2>Continue watching / reading</h2>
-        </div>
-        {progress.length === 0 && <Empty>Nothing in progress yet. Open a chapter or episode to resume it here.</Empty>}
-        {progress.length > 0 && (
-          <div className="list">
-            {progress.map((entry) => (
-              <div className="row" key={`${entry.kind}:${entry.seriesId}`}>
-                <div className="row-main">
-                  <div className="row-title">
-                    {entry.seriesTitle}{" "}
-                    {isNewCount(
-                      entry.kind,
-                      entry.seriesId,
-                      totals.data?.[`${entry.kind}:${entry.seriesId}`],
-                    ) && <span className="badge badge-accent">New</span>}
-                  </div>
-                  <div className="row-sub">
-                    {entry.label} · {formatDate(entry.time)}
-                  </div>
-                </div>
-                <div className="row-actions">
-                  <Link className="btn btn-sm" to={safeEntryUrl(entry.url)}>
-                    Resume
-                  </Link>
-                </div>
-              </div>
+      {entries.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Continue {kind === "manga" ? "reading" : "watching"}</h2>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? "Collapse" : "Show all"}
+            </button>
+          </div>
+          <div className={expanded ? "grid" : "rail"}>
+            {entries.map((entry) => (
+              <ShelfCard
+                key={entry.seriesId}
+                url={safeEntryUrl(entry.url, kind === "manga" ? "/manga" : "/anime")}
+                cover={entry.cover}
+                title={entry.seriesTitle}
+                sub={`${entry.label} · ${formatDate(entry.time)}`}
+                isNew={isNewCount(kind, entry.seriesId, totals.data?.[entry.seriesId])}
+                action="Resume"
+              />
             ))}
           </div>
-        )}
-      </section>
-      <section className="section">
-        <div className="section-head">
-          <h2>Recent activity</h2>
-        </div>
-        {activity.length === 0 && <Empty>No recent activity.</Empty>}
-        {activity.length > 0 && (
-          <div className="list">
-            {activity.map((item, index) => (
-              <div className="row" key={`${item.kind}:${item.itemId}:${index}`}>
-                <div className="row-main">
-                  <div className="row-title">{item.seriesTitle}</div>
-                  <div className="row-sub">
-                    {item.label} · {formatDate(item.time)}
-                  </div>
-                </div>
-                <div className="row-actions">
-                  <Link className="btn btn-sm btn-ghost" to={safeEntryUrl(item.url)}>
-                    Open
-                  </Link>
-                </div>
-              </div>
+        </section>
+      )}
+      {recent.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2>Recent activity</h2>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setExpandedRecent((v) => !v)}>
+              {expandedRecent ? "Collapse" : "Show all"}
+            </button>
+          </div>
+          <div className={expandedRecent ? "grid" : "rail"}>
+            {recent.map((item, index) => (
+              <ShelfCard
+                key={`${item.itemId}:${index}`}
+                url={safeEntryUrl(item.url, kind === "manga" ? "/manga" : "/anime")}
+                cover={item.cover}
+                title={item.seriesTitle}
+                sub={`${item.label} · ${formatDate(item.time)}`}
+                isNew={false}
+                action="Open"
+              />
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </>
   );
 }
