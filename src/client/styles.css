@@ -558,8 +558,12 @@ option {
 
 /* ponytail: filter panel reuses .prov dropdown chrome. */
 .prov-filters {
+  left: auto;
+  right: 0;
   gap: 10px;
   min-width: 210px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
   padding: 10px;
 }
 
