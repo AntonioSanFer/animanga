@@ -63,7 +63,7 @@ function asList<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
-const SAFE_URL = /^\/(manga\/chapter\/[0-9a-f-]+|anime\/watch\/\d+)\/?([?#]|$)/i;
+const SAFE_URL = /^\/(manga\/chapter\/[A-Za-z0-9:_-]+|anime\/watch\/\d+)\/?([?#]|$)/;
 
 export function safeEntryUrl(url: unknown, fallback = "/"): string {
   return typeof url === "string" && SAFE_URL.test(url) ? url : fallback;

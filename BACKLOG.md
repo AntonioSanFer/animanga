@@ -29,6 +29,12 @@
 ## Runtime download concurrency
 - [x] Admin-configurable `concurrent_downloads` (settings table + `GET`/`PATCH /api/admin/settings`, clamp 1-10, `pump()` on update); env `MAX_CONCURRENT_DOWNLOADS` remains the default.
 
+## Wave — WeebCentral second manga provider (2026-10-19)
+- [x] `src/server/sources/weebcentral.ts`: search/popular via `/search/data` (limit/offset, verified live), series page, full-chapter-list, chapter images endpoint; filters mapped (status Ongoing/Complete/Hiatus/Canceled, sort Best Match/Subscribers/Latest Updates/Popularity; demographic ignored — no site equivalent; lang ignored — site is EN-only).
+- [x] IDs `wc-<ULID>`; `isWeebCentralId`/`isMangaId` in `util.ts`; guards in `api.ts` (favourites/downloads/chapter/manga/img) + `SAFE_URL` in `bits.tsx` accept both; MangaDex UUID path unchanged. Covers/pages resolve server-side (`/api/img/manga/wc-…/cover`, `/api/img/page/wc-…/i`) with assertPublicHttpsUrl+assertResolvesPublic, no open proxy.
+- [x] `WEEBCENTRAL_BASE` const (env `WEEBCENTRAL_BASE_URL`) at top of module; registry appends WeebCentral after MangaDex; `/manga/popular` now goes through provider fallback so `?provider=weebcentral` works on browse.
+- [x] Live-verified: One Piece search/get/1196 chapters/ch.1196 (17 pages); `bun run typecheck` + `bun test` (24 pass) green.
+
 ## Ops
 - [x] `bun run typecheck` + `bun test` + `bun run build` green.
 - [ ] Commit + push (new version upload).

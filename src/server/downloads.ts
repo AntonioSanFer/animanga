@@ -11,8 +11,9 @@ import {
 } from "./config";
 import { db, getDownload, getDownloadByKey, getSetting, setSetting, toDownload, type DownloadRow } from "./db";
 import { getChapterImages, getChapterMeta } from "./sources/mangadex";
+import { chapterDownloadName as weebChapterDownloadName, getChapterImages as weebChapterImages } from "./sources/weebcentral";
 import { getStream } from "./sources/hianime";
-import { sanitizeFilename } from "./util";
+import { isWeebCentralId, sanitizeFilename } from "./util";
 import type { DownloadJob, Kind } from "../shared/types";
 
 const queue: number[] = [];
@@ -171,7 +172,7 @@ async function fetchBytes(url: string, signal: AbortSignal, tries = 3): Promise<
 }
 
 export async function buildMangaZip(chapterId: string, signal = new AbortController().signal): Promise<Uint8Array> {
-  const images = await getChapterImages(chapterId);
+  const images = isWeebCentralId(chapterId) ? await weebChapterImages(chapterId) : await getChapterImages(chapterId);
   if (images.length === 0) throw new Error("Chapter has no pages");
   const files: Record<string, Uint8Array> = {};
   let cursor = 0;
@@ -190,7 +191,7 @@ export async function buildMangaZip(chapterId: string, signal = new AbortControl
 }
 
 async function downloadManga(job: DownloadJob, signal: AbortSignal): Promise<void> {
-  const images = await getChapterImages(job.itemId);
+  const images = isWeebCentralId(job.itemId) ? await weebChapterImages(job.itemId) : await getChapterImages(job.itemId);
   if (images.length === 0) throw new Error("Chapter has no pages");
   const dir = join(DOWNLOAD_DIR, "manga", job.sourceId);
   mkdirSync(dir, { recursive: true });
@@ -437,6 +438,7 @@ export function downloadName(job: DownloadJob, extension: string): string {
 }
 
 export async function chapterDownloadName(chapterId: string): Promise<string> {
+  if (isWeebCentralId(chapterId)) return weebChapterDownloadName(chapterId);
   const meta = await getChapterMeta(chapterId);
   const manga = meta.data?.relationships?.find((r: any) => r.type === "manga")?.attributes?.title?.en || "manga";
   const attrs = meta.data?.attributes || {};

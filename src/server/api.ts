@@ -6,7 +6,8 @@ import { findCachedImage, IMAGE_ITEM_LIMIT, saveCachedImage } from "./imageCache
 import { downloadName, chapterDownloadName, buildMangaZip, createDownload, deleteDownload, concurrency, setConcurrency } from "./downloads";
 import { contentDisposition, serveFile } from "./files";
 import { animeStreamResponse } from "./media";
-import { coverUrl, getChapterImage, popularManga } from "./sources/mangadex";
+import { coverUrl, getChapterImage } from "./sources/mangadex";
+import { coverUrl as weebCoverUrl, getChapterImage as weebChapterImage } from "./sources/weebcentral";
 import { popularAnime } from "./sources/hianime";
 import {
   animeOrdered,
@@ -16,7 +17,7 @@ import {
   tryProviders,
 } from "./sources/registry";
 import { UA, mangaLang } from "./config";
-import { isAnimeId, assertPublicHttpsUrl, assertResolvesPublic, isUuid, sanitizeFilename } from "./util";
+import { isAnimeId, assertPublicHttpsUrl, assertResolvesPublic, isMangaId, isWeebCentralId, sanitizeFilename } from "./util";
 import type { DownloadJob, Kind } from "../shared/types";
 
 export const api = new Hono<AppEnv>();
@@ -139,7 +140,7 @@ api.post("/favourites", requireUser, async (c) => {
   const title = str(body.title, 300);
   const cover = validCover(body.cover);
   if (!validKind(kind) || !title) return c.json({ error: "Invalid favourite" }, 400);
-  if (kind === "manga" && !isUuid(sourceId)) return c.json({ error: "Invalid manga id" }, 400);
+  if (kind === "manga" && !isMangaId(sourceId)) return c.json({ error: "Invalid manga id" }, 400);
   if (kind === "anime" && !isAnimeId(sourceId)) return c.json({ error: "Invalid anime id" }, 400);
 
   db.query(
@@ -176,19 +177,22 @@ api.get("/manga/search", requireUser, async (c) => {
 });
 
 api.get("/manga/popular", requireUser, async (c) => {
+  if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const lang = mangaLang(c.req.query("lang"));
   const page = intParam(c.req.query("page") || "1", 1, 500);
   const filters = mangaFilters(c);
   const clean = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined));
-  const data = await popularManga(lang, page, clean);
+  const { result: data, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) =>
+    p.popular(lang, page, clean),
+  );
   c.header("Cache-Control", "private, max-age=120");
-  return c.json({ items: data.items, total: data.total });
+  return c.json({ items: data.items, total: data.total, providerId });
 });
 
 api.get("/manga/chapter/:chapterId", requireUser, async (c) => {
   if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const chapterId = c.req.param("chapterId");
-  if (!isUuid(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
+  if (!isMangaId(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
   const quality = c.req.query("q") === "hq" ? "data" : "data-saver";
   const { result: chapter, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) =>
     p.chapter(chapterId, quality),
@@ -199,7 +203,7 @@ api.get("/manga/chapter/:chapterId", requireUser, async (c) => {
 let activeZips = 0;
 api.get("/manga/chapter/:chapterId/file", requireUser, async (c) => {
   const chapterId = c.req.param("chapterId");
-  if (!isUuid(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
+  if (!isMangaId(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
 
   const existing = jobForItem("manga", chapterId);
   if (existing?.status === "done") {
@@ -232,7 +236,7 @@ api.get("/manga/chapter/:chapterId/file", requireUser, async (c) => {
 api.get("/manga/:id/chapters", requireUser, async (c) => {
   if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const id = c.req.param("id");
-  if (!isUuid(id)) return c.json({ error: "Invalid manga id" }, 400);
+  if (!isMangaId(id)) return c.json({ error: "Invalid manga id" }, 400);
   const lang = mangaLang(c.req.query("lang"));
   const { result: items, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) =>
     p.chapters(id, lang),
@@ -244,7 +248,7 @@ api.get("/manga/:id/chapters", requireUser, async (c) => {
 api.get("/manga/:id", requireUser, async (c) => {
   if (badProvider(c, "manga")) return c.json({ error: "Unknown provider" }, 400);
   const id = c.req.param("id");
-  if (!isUuid(id)) return c.json({ error: "Invalid manga id" }, 400);
+  if (!isMangaId(id)) return c.json({ error: "Invalid manga id" }, 400);
   const lang = mangaLang(c.req.query("lang"));
   const { result: manga, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) => p.get(id));
   c.header("Cache-Control", "private, max-age=300");
@@ -256,7 +260,13 @@ api.get("/img/manga/:id/:file", requireUser, async (c) => {
   const id = c.req.param("id");
   let url: string;
   try {
-    url = coverUrl(id, c.req.param("file"), size);
+    // ponytail: WeebCentral covers resolve server-side (no open ?u= proxy); file must be "cover".
+    if (isWeebCentralId(id)) {
+      if (c.req.param("file") !== "cover") throw new Error("Invalid cover");
+      url = await weebCoverUrl(id);
+    } else {
+      url = coverUrl(id, c.req.param("file"), size);
+    }
   } catch {
     return c.json({ error: "Invalid cover" }, 400);
   }
@@ -265,12 +275,14 @@ api.get("/img/manga/:id/:file", requireUser, async (c) => {
 
 api.get("/img/page/:chapterId/:index", requireUser, async (c) => {
   const chapterId = c.req.param("chapterId");
-  if (!isUuid(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
+  if (!isMangaId(chapterId)) return c.json({ error: "Invalid chapter id" }, 400);
   const index = intParam(c.req.param("index"), -1, 10_000);
   if (index < 0) return c.json({ error: "Invalid page" }, 400);
   const quality = c.req.query("q") === "hq" ? "data" : "data-saver";
   try {
-    const image = await getChapterImage(chapterId, index, quality);
+    const image = isWeebCentralId(chapterId)
+      ? await weebChapterImage(chapterId, index, quality)
+      : await getChapterImage(chapterId, index, quality);
     return proxyImage(c, image.url, "public, max-age=31536000, immutable");
   } catch (err: any) {
     return c.json({ error: err?.message || "Image unavailable" }, 404);
@@ -409,7 +421,7 @@ api.post("/downloads", requireUser, async (c) => {
   const lang = str(body.lang, 20) || null;
 
   if (!validKind(kind) || !title || !label) return c.json({ error: "Invalid download request" }, 400);
-  if (kind === "manga" && (!isUuid(sourceId) || !isUuid(itemId))) return c.json({ error: "Invalid manga ids" }, 400);
+  if (kind === "manga" && (!isMangaId(sourceId) || !isMangaId(itemId))) return c.json({ error: "Invalid manga ids" }, 400);
   if (kind === "anime" && (!isAnimeId(sourceId) || !/^\d{1,10}$/.test(itemId))) {
     return c.json({ error: "Invalid anime ids" }, 400);
   }

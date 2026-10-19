@@ -36,6 +36,15 @@ export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
+// ponytail: WeebCentral ULIDs namespaced as wc-<id>; same URL-safe alphabet as UUIDs.
+export function isWeebCentralId(value: string): boolean {
+  return /^wc-[A-Za-z0-9]{26}$/.test(value);
+}
+
+export function isMangaId(value: string): boolean {
+  return isUuid(value) || isWeebCentralId(value);
+}
+
 export function isAnimeId(value: string): boolean {
   return /^[a-z0-9-]{1,200}$/i.test(value);
 }

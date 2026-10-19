@@ -4,7 +4,9 @@ import {
   assertResolvesPublic,
   decodeEntities,
   isAnimeId,
+  isMangaId,
   isUuid,
+  isWeebCentralId,
   sanitizeFilename,
   stripTags,
 } from "../src/server/util";
@@ -59,6 +61,29 @@ describe("isUuid", () => {
     expect(isUuid("3f2b9c1e-8a4d-4e6f-9b2a-1c3d5e7f9a0")).toBe(false);
     expect(isUuid("../../etc/passwd")).toBe(false);
     expect(isUuid("")).toBe(false);
+  });
+});
+
+describe("isWeebCentralId", () => {
+  test("accepts wc-namespaced ULIDs", () => {
+    expect(isWeebCentralId("wc-01J76XY7E9FNDZ1DBBM6PBJPFK")).toBe(true);
+    expect(isWeebCentralId("wc-01M52CHK8P0DVE505KQ6MA0H68")).toBe(true);
+  });
+
+  test("rejects UUIDs, bare ULIDs and traversal", () => {
+    expect(isWeebCentralId("3f2b9c1e-8a4d-4e6f-9b2a-1c3d5e7f9a0b")).toBe(false);
+    expect(isWeebCentralId("01J76XY7E9FNDZ1DBBM6PBJPFK")).toBe(false);
+    expect(isWeebCentralId("wc-01J76XY7E9FNDZ1DBBM6PBJPF")).toBe(false);
+    expect(isWeebCentralId("wc-../../etc/passwd.............")).toBe(false);
+    expect(isWeebCentralId("")).toBe(false);
+  });
+});
+
+describe("isMangaId", () => {
+  test("accepts both MangaDex UUIDs and WeebCentral ids", () => {
+    expect(isMangaId("3f2b9c1e-8a4d-4e6f-9b2a-1c3d5e7f9a0b")).toBe(true);
+    expect(isMangaId("wc-01J76XY7E9FNDZ1DBBM6PBJPFK")).toBe(true);
+    expect(isMangaId("not-an-id")).toBe(false);
   });
 });
 
