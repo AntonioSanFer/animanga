@@ -5,6 +5,7 @@ import {
   decodeEntities,
   isAnimeId,
   isMangaId,
+  isMangaPillId,
   isUuid,
   isWeebCentralId,
   sanitizeFilename,
@@ -79,10 +80,26 @@ describe("isWeebCentralId", () => {
   });
 });
 
+describe("isMangaPillId", () => {
+  test("accepts mp-namespaced series and chapter ids", () => {
+    expect(isMangaPillId("mp-2")).toBe(true);
+    expect(isMangaPillId("mp-2-11196000")).toBe(true);
+  });
+
+  test("rejects UUIDs, bare ids and traversal", () => {
+    expect(isMangaPillId("3f2b9c1e-8a4d-4e6f-9b2a-1c3d5e7f9a0b")).toBe(false);
+    expect(isMangaPillId("mp-../../etc/passwd")).toBe(false);
+    expect(isMangaPillId("mp-")).toBe(false);
+    expect(isMangaPillId("")).toBe(false);
+  });
+});
+
 describe("isMangaId", () => {
-  test("accepts both MangaDex UUIDs and WeebCentral ids", () => {
+  test("accepts MangaDex UUIDs, WeebCentral and MangaPill ids", () => {
     expect(isMangaId("3f2b9c1e-8a4d-4e6f-9b2a-1c3d5e7f9a0b")).toBe(true);
     expect(isMangaId("wc-01J76XY7E9FNDZ1DBBM6PBJPFK")).toBe(true);
+    expect(isMangaId("mp-2")).toBe(true);
+    expect(isMangaId("mp-2-11196000")).toBe(true);
     expect(isMangaId("not-an-id")).toBe(false);
   });
 });

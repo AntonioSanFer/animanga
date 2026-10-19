@@ -41,8 +41,13 @@ export function isWeebCentralId(value: string): boolean {
   return /^wc-[A-Za-z0-9]{26}$/.test(value);
 }
 
+// ponytail: MangaPill ids are mp-<seriesId> / mp-<seriesId>-<chapterId> (site numeric ids).
+export function isMangaPillId(value: string): boolean {
+  return /^mp-\d{1,10}(?:-\d{1,12})?$/.test(value);
+}
+
 export function isMangaId(value: string): boolean {
-  return isUuid(value) || isWeebCentralId(value);
+  return isUuid(value) || isWeebCentralId(value) || isMangaPillId(value);
 }
 
 export function isAnimeId(value: string): boolean {

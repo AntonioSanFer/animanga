@@ -29,6 +29,12 @@
 ## Runtime download concurrency
 - [x] Admin-configurable `concurrent_downloads` (settings table + `GET`/`PATCH /api/admin/settings`, clamp 1-10, `pump()` on update); env `MAX_CONCURRENT_DOWNLOADS` remains the default.
 
+## Wave — MangaPill third manga provider (2026-10-19)
+- [x] `src/server/sources/mangapill.ts`: search/popular via `/search` (q/status/genre/page, verified live, 50/page), series page (`/manga/<id>`, slug optional), chapter list on series page, chapter images (`img.js-page[data-src]`); filters mapped (status publishing/finished/on hiatus/discontinued, demographic→genre Shounen/Shoujo/Josei/Seinen; sort ignored — no site param; lang ignored — EN-only).
+- [x] IDs `mp-<seriesId>` / `mp-<seriesId>-<chapterId>`; `isMangaPillId`/`isMangaId` in `util.ts`; mirrored every `isWeebCentralId` site (`api.ts` cover + page image, `downloads.ts` zip/download/name) so `isMangaId` guards cover it; `SAFE_URL` in `bits.tsx` already accepts `[A-Za-z0-9:_-]` (no change needed). Covers/pages resolve server-side with assertPublicHttpsUrl+assertResolvesPublic, no open proxy.
+- [x] `MANGAPILL_BASE` const (env `MANGAPILL_BASE_URL`) at top of module; registry appends MangaPill after WeebCentral.
+- [x] Live-verified: "one piece" search→One Piece (mp-2), get (1997/ongoing), 1212 chapters (Ch.1–1196), Ch.1196 (17 pages), cover + page-0 CDN URLs resolve; `bun run typecheck` + `bun test` (26 pass) green.
+
 ## Wave — WeebCentral second manga provider (2026-10-19)
 - [x] `src/server/sources/weebcentral.ts`: search/popular via `/search/data` (limit/offset, verified live), series page, full-chapter-list, chapter images endpoint; filters mapped (status Ongoing/Complete/Hiatus/Canceled, sort Best Match/Subscribers/Latest Updates/Popularity; demographic ignored — no site equivalent; lang ignored — site is EN-only).
 - [x] IDs `wc-<ULID>`; `isWeebCentralId`/`isMangaId` in `util.ts`; guards in `api.ts` (favourites/downloads/chapter/manga/img) + `SAFE_URL` in `bits.tsx` accept both; MangaDex UUID path unchanged. Covers/pages resolve server-side (`/api/img/manga/wc-…/cover`, `/api/img/page/wc-…/i`) with assertPublicHttpsUrl+assertResolvesPublic, no open proxy.

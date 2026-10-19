@@ -1,6 +1,7 @@
 import type { AnimeSummary, Chapter, ChapterPage, Episode, MangaSummary } from "../../shared/types";
 import * as mangadex from "./mangadex";
 import * as weebcentral from "./weebcentral";
+import * as mangapill from "./mangapill";
 import * as hianime from "./hianime";
 
 export interface MangaFilters {
@@ -55,6 +56,15 @@ export const mangaProviders: MangaProvider[] = [
     get: weebcentral.getManga,
     chapters: weebcentral.getChapters,
     chapter: weebcentral.getChapter,
+  },
+  {
+    id: "mangapill",
+    label: "MangaPill",
+    search: mangapill.searchManga,
+    popular: mangapill.popularManga,
+    get: mangapill.getManga,
+    chapters: mangapill.getChapters,
+    chapter: mangapill.getChapter,
   },
 ];
 
