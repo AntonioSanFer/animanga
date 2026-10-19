@@ -35,7 +35,52 @@ On Windows and Docker Desktop, bind-mount permissions are handled automatically.
 
 ## CasaOS
 
-Apps → `+` → Custom App / Import Compose, paste `docker-compose.yml`, keep the persistent volume `./data:/app/data`, then start. Metadata for the CasaOS app grid (`x-casaos`) is included in the compose file.
+Apps → `+` → Custom App / Import Compose. Use the prebuilt image (no local build needed):
+
+```yaml
+name: animanga
+services:
+  animanga:
+    image: ghcr.io/antoniosanfer/animanga:latest
+    container_name: animanga
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - BETTER_AUTH_URL=http://192.168.1.100:3000
+      - AUTH_PASSWORD_ENABLED=1
+    volumes:
+      - /DATA/AppData/animanga:/app/data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: animanga
+  title:
+    en_us: AniManga
+  category: Media
+  port_map: "3000"
+  scheme: http
+  description:
+    en_us: Self-hosted manga and anime browser with favourites, offline downloads and per-user access control.
+```
+
+- Replace `BETTER_AUTH_URL` with the URL you actually open (LAN IP or reverse-proxied https URL).
+- Set `AUTH_PASSWORD_ENABLED=1` for the first login, then back to `0` if you configure SSO.
+- The container runs as uid 1000. If it cannot write to the volume, run:
+  `sudo chown -R 1000:1000 /DATA/AppData/animanga`
+- To use another host port, change both `"3000:3000"` and `port_map`, and update `BETTER_AUTH_URL`.
+
+The repo's `docker-compose.yml` builds locally and is intended for development; CasaOS should use the image above.
 
 If CasaOS does not create a `.env` file next to the compose file, set the variables from `.env.example` in the app's environment settings before starting.
 
