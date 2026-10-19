@@ -46,6 +46,15 @@
 - [x] `WEEBCENTRAL_BASE` const (env `WEEBCENTRAL_BASE_URL`) at top of module; registry appends WeebCentral after MangaDex; `/manga/popular` now goes through provider fallback so `?provider=weebcentral` works on browse.
 - [x] Live-verified: One Piece search/get/1196 chapters/ch.1196 (17 pages); `bun run typecheck` + `bun test` (24 pass) green.
 
+## Wave — AllAnime second anime provider (2026-10-19): BLOCKED
+- [ ] Search/episodes/details work via GraphQL (`api.mkissa.net`/`api.allanime.day`), but stream resolution returns `AA_CRYPTO_MISSING` — current protocol needs a browser-bound `aaReq` signer (AES-GCM, rotating epoch, lane binding) that can't be replicated with plain fetch. Unblocks if AllAnime ships a stable server-side path or a maintained self-hosted signer appears. Tree untouched.
+
+## Wave — AnimePahe second anime provider (2026-10-19): BLOCKED
+- [ ] No reachable site API: `animepahe.ru`/`.su` parked, `.li`/`.im` WordPress clones, `.pk` hijacked, official `.pw` behind edge Cloudflare challenge on every path; `kwik.si` parked, `kwik.cx` 403. Re-probe domains before any future attempt. Tree untouched.
+
+## Wave — Anitaku/Gogoanime second anime provider (2026-10-19): BLOCKED
+- [ ] 15 hosts probed with plain fetch from server (Bun runtime): only `gogoanime.me` serves search/category/episode HTML (One Piece → 1158 eps, movie_id 171), but its `/embed/` 302s to `animesource.me` which Bun cannot TLS-verify (`unable to verify the first certificate`) and whose JSON API returns `Invalid animeEpisodeId` even for its own player's URL format (`/watch/one-piece-100/1158.json`, `/watch/naruto-677/1.json`, `?ep=`/encoded/Referer variants all fail); classic `ajax.gogocdn.net`/`gogocdn.net` hang at TCP (curl 28 too); `anitaku.bz` fails Bun TLS (`unable to get local issuer certificate`, curl OK → Bun-chain incompatibility); rest parked/challenged/fake (`anitaku.so` JS shell, `anitaku.site` wrong site, `gogoanime.la` DNS dead, `gogoanime.fi` fake clone, `gogoanime.com.co` 403, `gogoanime.sk`/`gogoanime.io` parked, `anitaku.io` WP aggregator w/o working search, `anitaku.pe`/`gogoanime.gg/.vu` challenge/timeout). Two independent gates (TLS + broken stream API) — no code fix without disabling TLS verification. Re-probe mirrors before any future attempt. Tree untouched.
+
 ## Ops
 - [x] `bun run typecheck` + `bun test` + `bun run build` green.
 - [ ] Commit + push (new version upload).
