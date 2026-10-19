@@ -16,7 +16,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # yt-dlp ships separate standalone binaries; pick the one matching the image arch.
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
       arm64) YTDLP_ASSET=yt-dlp_linux_aarch64 ;; \
       *) YTDLP_ASSET=yt-dlp_linux ;; \
