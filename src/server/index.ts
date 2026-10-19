@@ -41,7 +41,6 @@ app.use(
       objectSrc: ["'none'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      upgradeInsecureRequests: BASE_URL.startsWith("https://") ? [] : undefined,
     },
     permissionsPolicy: { camera: [], microphone: [], geolocation: [] },
   }),
