@@ -9,7 +9,7 @@ import {
   UA,
   YTDLP,
 } from "./config";
-import { db, getDownload, getDownloadByKey, toDownload, type DownloadRow } from "./db";
+import { db, getDownload, getDownloadByKey, getSetting, setSetting, toDownload, type DownloadRow } from "./db";
 import { getChapterImages, getChapterMeta } from "./sources/mangadex";
 import { getStream } from "./sources/hianime";
 import { sanitizeFilename } from "./util";
@@ -104,8 +104,20 @@ export function enqueue(id: number): void {
   pump();
 }
 
+export function concurrency(): number {
+  const n = Number(getSetting("concurrent_downloads") ?? MAX_CONCURRENT_DOWNLOADS);
+  return Number.isFinite(n) ? Math.max(1, Math.min(10, Math.floor(n))) : MAX_CONCURRENT_DOWNLOADS;
+}
+
+export function setConcurrency(n: number): number {
+  const v = Number.isFinite(n) ? Math.max(1, Math.min(10, Math.floor(n))) : MAX_CONCURRENT_DOWNLOADS;
+  setSetting("concurrent_downloads", String(v));
+  pump();
+  return v;
+}
+
 function pump(): void {
-  while (active.size < MAX_CONCURRENT_DOWNLOADS && queue.length > 0) {
+  while (active.size < concurrency() && queue.length > 0) {
     const id = queue.shift()!;
     active.add(id);
     runJob(id)

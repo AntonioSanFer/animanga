@@ -47,8 +47,60 @@ export function AdminPage() {
         </button>
       </div>
 
-      {tab === "users" ? <UsersPanel selfEmail={me.data.user.email} /> : <DownloadsList isAdmin />}
+      {tab === "users" ? (
+        <UsersPanel selfEmail={me.data.user.email} />
+      ) : (
+        <>
+          <ConcurrencySettings />
+          <DownloadsList isAdmin />
+        </>
+      )}
     </>
+  );
+}
+
+function ConcurrencySettings() {
+  const queryClient = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["admin", "settings"],
+    queryFn: () => request<{ concurrentDownloads: number }>("/api/admin/settings"),
+  });
+  const [value, setValue] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (n: number) => patch<{ concurrentDownloads: number }>("/api/admin/settings", { concurrentDownloads: n }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "settings"] }),
+  });
+  const current = value ?? (settings.data ? String(settings.data.concurrentDownloads) : "");
+  return (
+    <form
+      className="admin-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate(Math.max(1, Math.min(10, Math.floor(Number(current)))));
+      }}
+    >
+      <label className="field">
+        <span>Concurrent downloads (1–10)</span>
+        <input
+          className="input"
+          type="number"
+          min={1}
+          max={10}
+          value={current}
+          disabled={settings.isPending}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </label>
+      <button type="submit" className="btn" disabled={save.isPending || settings.isPending}>
+        {save.isPending ? "Saving…" : "Save"}
+      </button>
+      {(save.isError || settings.isError) && (
+        <p className="form-error" role="alert">
+          {errorMessage(save.error ?? settings.error)}
+        </p>
+      )}
+      {save.isSuccess && <span className="muted">Saved</span>}
+    </form>
   );
 }
 

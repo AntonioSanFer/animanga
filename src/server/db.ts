@@ -53,7 +53,21 @@ CREATE TABLE IF NOT EXISTS cache (
   expires INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache(expires);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `);
+
+export function getSetting(key: string): string | null {
+  const row = db.query("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | null;
+  return row?.value ?? null;
+}
+
+export function setSetting(key: string, value: string): void {
+  db.query("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+}
 
 export type AppUserRow = {
   email: string;

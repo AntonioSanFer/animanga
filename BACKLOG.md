@@ -16,6 +16,9 @@
 - [x] "Recent activity" section on main tab.
 - [x] Back nav button on main manga/anime screens.
 
+## Runtime download concurrency
+- [x] Admin-configurable `concurrent_downloads` (settings table + `GET`/`PATCH /api/admin/settings`, clamp 1-10, `pump()` on update); env `MAX_CONCURRENT_DOWNLOADS` remains the default.
+
 ## Ops
 - [x] `bun run typecheck` + `bun test` + `bun run build` green.
 - [ ] Commit + push (new version upload).

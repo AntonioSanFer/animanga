@@ -3,7 +3,7 @@ import { AUTH_PROVIDERS, callbackUrl, passwordAuthEnabled } from "./auth";
 import { countActiveAdmins, findAppUser, requireAdmin, requireSession, requireUser, type AppEnv } from "./access";
 import { db, findDoneDownloadId, getDownload } from "./db";
 import { findCachedImage, IMAGE_ITEM_LIMIT, saveCachedImage } from "./imageCache";
-import { downloadName, chapterDownloadName, buildMangaZip, createDownload, deleteDownload } from "./downloads";
+import { downloadName, chapterDownloadName, buildMangaZip, createDownload, deleteDownload, concurrency, setConcurrency } from "./downloads";
 import { contentDisposition, serveFile } from "./files";
 import { animeStreamResponse } from "./media";
 import { coverUrl, getChapterImage, popularManga } from "./sources/mangadex";
@@ -402,6 +402,18 @@ api.delete("/downloads/:id", requireAdmin, (c) => {
 });
 
 // ---------- admin ----------
+
+api.get("/admin/settings", requireAdmin, (c) => {
+  return c.json({ concurrentDownloads: concurrency() });
+});
+
+api.patch("/admin/settings", requireAdmin, async (c) => {
+  const body = obj(await c.req.json().catch(() => null));
+  if (body.concurrentDownloads === undefined) return c.json({ concurrentDownloads: concurrency() });
+  const n = Number(body.concurrentDownloads);
+  if (!Number.isFinite(n)) return c.json({ error: "Invalid value" }, 400);
+  return c.json({ concurrentDownloads: setConcurrency(n) });
+});
 
 api.get("/admin/users", requireAdmin, (c) => {
   const rows = db
