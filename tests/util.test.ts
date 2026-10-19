@@ -4,6 +4,7 @@ import {
   assertResolvesPublic,
   decodeEntities,
   isAnimeId,
+  isMangaFireId,
   isMangaId,
   isMangaPillId,
   isUuid,
@@ -11,6 +12,7 @@ import {
   sanitizeFilename,
   stripTags,
 } from "../src/server/util";
+import { signVrf } from "../src/server/sources/mangafire";
 
 describe("decodeEntities", () => {
   test("decodes named and numeric entities", () => {
@@ -95,12 +97,39 @@ describe("isMangaPillId", () => {
 });
 
 describe("isMangaId", () => {
-  test("accepts MangaDex UUIDs, WeebCentral and MangaPill ids", () => {
+  test("accepts MangaDex UUIDs, WeebCentral, MangaPill and MangaFire ids", () => {
     expect(isMangaId("3f2b9c1e-8a4d-4e6f-9b2a-1c3d5e7f9a0b")).toBe(true);
     expect(isMangaId("wc-01J76XY7E9FNDZ1DBBM6PBJPFK")).toBe(true);
     expect(isMangaId("mp-2")).toBe(true);
     expect(isMangaId("mp-2-11196000")).toBe(true);
+    expect(isMangaId("mf-dkw")).toBe(true);
+    expect(isMangaId("mf-dkw-9498777")).toBe(true);
     expect(isMangaId("not-an-id")).toBe(false);
+  });
+});
+
+describe("isMangaFireId", () => {
+  test("accepts mf-namespaced series and chapter ids", () => {
+    expect(isMangaFireId("mf-dkw")).toBe(true);
+    expect(isMangaFireId("mf-oo5jy")).toBe(true);
+    expect(isMangaFireId("mf-dkw-9498777")).toBe(true);
+  });
+
+  test("rejects UUIDs, bare ids and traversal", () => {
+    expect(isMangaFireId("3f2b9c1e-8a4d-4e6f-9b2a-1c3d5e7f9a0b")).toBe(false);
+    expect(isMangaFireId("mf-../../etc/passwd")).toBe(false);
+    expect(isMangaFireId("mf-")).toBe(false);
+    expect(isMangaFireId("mf-dkw-abc")).toBe(false);
+    expect(isMangaFireId("")).toBe(false);
+  });
+});
+
+describe("signVrf", () => {
+  test("signs the canonical api path deterministically (live-verified vector)", () => {
+    expect(signVrf("/titles?limit=50&order[views_30d]=desc&page=1")).toBe(
+      "8sK3xtqdFZdD1d-yEmkP1xkAaXb7oSK54WttidWIJ0AiyAVEqx8wQlBW1qgZ",
+    );
+    expect(signVrf("/titles/dkw")).toBe("8sK3xtqdFds7Xfo");
   });
 });
 

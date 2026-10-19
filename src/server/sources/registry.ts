@@ -2,6 +2,7 @@ import type { AnimeSummary, Chapter, ChapterPage, Episode, MangaSummary } from "
 import * as mangadex from "./mangadex";
 import * as weebcentral from "./weebcentral";
 import * as mangapill from "./mangapill";
+import * as mangafire from "./mangafire";
 import * as hianime from "./hianime";
 
 export interface MangaFilters {
@@ -65,6 +66,15 @@ export const mangaProviders: MangaProvider[] = [
     get: mangapill.getManga,
     chapters: mangapill.getChapters,
     chapter: mangapill.getChapter,
+  },
+  {
+    id: "mangafire",
+    label: "MangaFire",
+    search: mangafire.searchManga,
+    popular: mangafire.popularManga,
+    get: mangafire.getManga,
+    chapters: mangafire.getChapters,
+    chapter: mangafire.getChapter,
   },
 ];
 

@@ -29,6 +29,11 @@
 ## Runtime download concurrency
 - [x] Admin-configurable `concurrent_downloads` (settings table + `GET`/`PATCH /api/admin/settings`, clamp 1-10, `pump()` on update); env `MAX_CONCURRENT_DOWNLOADS` remains the default.
 
+## Wave — MangaFire fourth manga provider (2026-10-19)
+- [x] `src/server/sources/mangafire.ts`: JSON API `/api/titles` + `/api/titles/{hid}/chapters` + `/api/chapters/{id}` with ported Keiyoushi `VrfSigner` (pure table-XOR, no browser); filters mapped (status→`statuses[]`, sort→`order[]`, demographic→`genres_in[]` ids; lang allowlisted, scopes chapters).
+- [x] IDs `mf-<hid>` / `mf-<hid>-<chapterId>`; `isMangaFireId`/`isMangaId` in `util.ts`; mirrored every `isMangaPillId` site (`api.ts` cover + page image, `downloads.ts` zip/download/name); `MANGAFIRE_BASE` const (env `MANGAFIRE_BASE_URL`); registry appends MangaFire LAST.
+- [x] Live-verified: "one piece" search→One Piece (mf-dkw), get (1997/ongoing/Oda), 2443 chapters, Ch.1196 official (17 pages), cover + page-0 resolve 200; no CAPTCHA hit from server IP (plain fetch + VRF suffices, no Playwright); `bun run typecheck` + `bun test` (29 pass) green.
+
 ## Wave — MangaPill third manga provider (2026-10-19)
 - [x] `src/server/sources/mangapill.ts`: search/popular via `/search` (q/status/genre/page, verified live, 50/page), series page (`/manga/<id>`, slug optional), chapter list on series page, chapter images (`img.js-page[data-src]`); filters mapped (status publishing/finished/on hiatus/discontinued, demographic→genre Shounen/Shoujo/Josei/Seinen; sort ignored — no site param; lang ignored — EN-only).
 - [x] IDs `mp-<seriesId>` / `mp-<seriesId>-<chapterId>`; `isMangaPillId`/`isMangaId` in `util.ts`; mirrored every `isWeebCentralId` site (`api.ts` cover + page image, `downloads.ts` zip/download/name) so `isMangaId` guards cover it; `SAFE_URL` in `bits.tsx` already accepts `[A-Za-z0-9:_-]` (no change needed). Covers/pages resolve server-side with assertPublicHttpsUrl+assertResolvesPublic, no open proxy.

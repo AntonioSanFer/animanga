@@ -13,8 +13,9 @@ import { db, getDownload, getDownloadByKey, getSetting, setSetting, toDownload, 
 import { getChapterImages, getChapterMeta } from "./sources/mangadex";
 import { chapterDownloadName as weebChapterDownloadName, getChapterImages as weebChapterImages } from "./sources/weebcentral";
 import { chapterDownloadName as pillChapterDownloadName, getChapterImages as pillChapterImages } from "./sources/mangapill";
+import { chapterDownloadName as fireChapterDownloadName, getChapterImages as fireChapterImages } from "./sources/mangafire";
 import { getStream } from "./sources/hianime";
-import { isMangaPillId, isWeebCentralId, sanitizeFilename } from "./util";
+import { isMangaFireId, isMangaPillId, isWeebCentralId, sanitizeFilename } from "./util";
 import type { DownloadJob, Kind } from "../shared/types";
 
 const queue: number[] = [];
@@ -175,6 +176,7 @@ async function fetchBytes(url: string, signal: AbortSignal, tries = 3): Promise<
 function mangaChapterImages(chapterId: string): Promise<{ url: string; fileName: string }[]> {
   if (isWeebCentralId(chapterId)) return weebChapterImages(chapterId);
   if (isMangaPillId(chapterId)) return pillChapterImages(chapterId);
+  if (isMangaFireId(chapterId)) return fireChapterImages(chapterId);
   return getChapterImages(chapterId);
 }
 
@@ -447,6 +449,7 @@ export function downloadName(job: DownloadJob, extension: string): string {
 export async function chapterDownloadName(chapterId: string): Promise<string> {
   if (isWeebCentralId(chapterId)) return weebChapterDownloadName(chapterId);
   if (isMangaPillId(chapterId)) return pillChapterDownloadName(chapterId);
+  if (isMangaFireId(chapterId)) return fireChapterDownloadName(chapterId);
   const meta = await getChapterMeta(chapterId);
   const manga = meta.data?.relationships?.find((r: any) => r.type === "manga")?.attributes?.title?.en || "manga";
   const attrs = meta.data?.attributes || {};

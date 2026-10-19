@@ -9,6 +9,7 @@ import { animeStreamResponse } from "./media";
 import { coverUrl, getChapterImage } from "./sources/mangadex";
 import { coverUrl as weebCoverUrl, getChapterImage as weebChapterImage } from "./sources/weebcentral";
 import { coverUrl as pillCoverUrl, getChapterImage as pillChapterImage } from "./sources/mangapill";
+import { coverUrl as fireCoverUrl, getChapterImage as fireChapterImage } from "./sources/mangafire";
 import { popularAnime } from "./sources/hianime";
 import {
   animeOrdered,
@@ -18,7 +19,7 @@ import {
   tryProviders,
 } from "./sources/registry";
 import { UA, mangaLang } from "./config";
-import { isAnimeId, assertPublicHttpsUrl, assertResolvesPublic, isMangaId, isMangaPillId, isWeebCentralId, sanitizeFilename } from "./util";
+import { isAnimeId, assertPublicHttpsUrl, assertResolvesPublic, isMangaId, isMangaFireId, isMangaPillId, isWeebCentralId, sanitizeFilename } from "./util";
 import type { DownloadJob, Kind } from "../shared/types";
 
 export const api = new Hono<AppEnv>();
@@ -261,13 +262,16 @@ api.get("/img/manga/:id/:file", requireUser, async (c) => {
   const id = c.req.param("id");
   let url: string;
   try {
-    // ponytail: WeebCentral/MangaPill covers resolve server-side (no open ?u= proxy); file must be "cover".
+    // ponytail: WeebCentral/MangaPill/MangaFire covers resolve server-side (no open ?u= proxy); file must be "cover".
     if (isWeebCentralId(id)) {
       if (c.req.param("file") !== "cover") throw new Error("Invalid cover");
       url = await weebCoverUrl(id);
     } else if (isMangaPillId(id)) {
       if (c.req.param("file") !== "cover") throw new Error("Invalid cover");
       url = await pillCoverUrl(id);
+    } else if (isMangaFireId(id)) {
+      if (c.req.param("file") !== "cover") throw new Error("Invalid cover");
+      url = await fireCoverUrl(id);
     } else {
       url = coverUrl(id, c.req.param("file"), size);
     }
@@ -288,7 +292,9 @@ api.get("/img/page/:chapterId/:index", requireUser, async (c) => {
       ? await weebChapterImage(chapterId, index, quality)
       : isMangaPillId(chapterId)
         ? await pillChapterImage(chapterId, index, quality)
-        : await getChapterImage(chapterId, index, quality);
+        : isMangaFireId(chapterId)
+          ? await fireChapterImage(chapterId, index, quality)
+          : await getChapterImage(chapterId, index, quality);
     return proxyImage(c, image.url, "public, max-age=31536000, immutable");
   } catch (err: any) {
     return c.json({ error: err?.message || "Image unavailable" }, 404);

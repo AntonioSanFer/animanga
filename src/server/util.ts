@@ -46,8 +46,13 @@ export function isMangaPillId(value: string): boolean {
   return /^mp-\d{1,10}(?:-\d{1,12})?$/.test(value);
 }
 
+// ponytail: MangaFire ids are mf-<hid> / mf-<hid>-<chapterId> (site hid + numeric chapter id).
+export function isMangaFireId(value: string): boolean {
+  return /^mf-[A-Za-z0-9]{1,16}(?:-\d{1,12})?$/.test(value);
+}
+
 export function isMangaId(value: string): boolean {
-  return isUuid(value) || isWeebCentralId(value) || isMangaPillId(value);
+  return isUuid(value) || isWeebCentralId(value) || isMangaPillId(value) || isMangaFireId(value);
 }
 
 export function isAnimeId(value: string): boolean {
