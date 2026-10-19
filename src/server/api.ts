@@ -47,6 +47,34 @@ function validEmail(v: string): boolean {
   return v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
+// ponytail: allowlisted filter params only — unknown values dropped, never forwarded.
+function oneOf(v: unknown, allowed: string[]): string | undefined {
+  const s = str(v, 40);
+  return allowed.includes(s) ? s : undefined;
+}
+
+const MANGA_STATUS = ["ongoing", "completed", "hiatus", "cancelled"];
+const MANGA_SORTS = ["relevance", "followedCount", "latestUploadedChapter", "rating"];
+const MANGA_DEMOGRAPHICS = ["shounen", "shoujo", "josei", "seinen", "none"];
+const ANIME_TYPES = ["tv", "movie", "ova", "ona", "special", "music"];
+const ANIME_STATUS = ["completed", "releasing", "not_yet_aired"];
+const ANIME_SORTS = ["updated_date", "added_date", "release_date", "trending", "title_az", "avg_score", "mal_score", "most_viewed", "most_followed", "episode_count"];
+
+function mangaFilters(c: any) {
+  return {
+    status: oneOf(c.req.query("status"), MANGA_STATUS),
+    sort: oneOf(c.req.query("sort"), MANGA_SORTS),
+    demographic: oneOf(c.req.query("demographic"), MANGA_DEMOGRAPHICS),
+  };
+}
+
+function animeFilters(c: any) {
+  return {
+    type: oneOf(c.req.query("type"), ANIME_TYPES),
+    status: oneOf(c.req.query("status"), ANIME_STATUS),
+    sort: oneOf(c.req.query("sort"), ANIME_SORTS),
+  };
+}
 function providerOf(c: any, kind: Kind): string | undefined {
   const p = str(c.req.query("provider"), 40);
   return p || undefined;
@@ -138,8 +166,10 @@ api.get("/manga/search", requireUser, async (c) => {
   const q = str(c.req.query("q"), 200);
   const lang = mangaLang(c.req.query("lang"));
   const page = intParam(c.req.query("page") || "1", 1, 500);
+  const filters = mangaFilters(c);
+  const clean = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined));
   const { result: data, providerId } = await tryProviders(mangaOrdered(providerOf(c, "manga")), (p) =>
-    p.search(q, lang, page),
+    p.search(q, lang, page, clean),
   );
   c.header("Cache-Control", "private, max-age=30");
   return c.json({ ...data, providerId });
@@ -148,7 +178,9 @@ api.get("/manga/search", requireUser, async (c) => {
 api.get("/manga/popular", requireUser, async (c) => {
   const lang = mangaLang(c.req.query("lang"));
   const page = intParam(c.req.query("page") || "1", 1, 500);
-  const data = await popularManga(lang, page);
+  const filters = mangaFilters(c);
+  const clean = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined));
+  const data = await popularManga(lang, page, clean);
   c.header("Cache-Control", "private, max-age=120");
   return c.json({ items: data.items, total: data.total });
 });
@@ -251,8 +283,10 @@ api.get("/anime/search", requireUser, async (c) => {
   if (badProvider(c, "anime")) return c.json({ error: "Unknown provider" }, 400);
   const q = str(c.req.query("q"), 200);
   const page = intParam(c.req.query("page") || "1", 1, 100);
+  const filters = animeFilters(c);
+  const clean = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined));
   const { result: items, providerId } = await tryProviders(animeOrdered(providerOf(c, "anime")), (p) =>
-    p.search(q, page),
+    p.search(q, page, clean),
   );
   c.header("Cache-Control", "private, max-age=60");
   return c.json({ items, providerId });
@@ -260,7 +294,9 @@ api.get("/anime/search", requireUser, async (c) => {
 
 api.get("/anime/popular", requireUser, async (c) => {
   const page = intParam(c.req.query("page") || "1", 1, 100);
-  const items = await popularAnime(page);
+  const filters = animeFilters(c);
+  const clean = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined));
+  const items = await popularAnime(page, clean);
   c.header("Cache-Control", "private, max-age=300");
   return c.json({ items });
 });

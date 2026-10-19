@@ -2,11 +2,23 @@ import type { AnimeSummary, Chapter, ChapterPage, Episode, MangaSummary } from "
 import * as mangadex from "./mangadex";
 import * as hianime from "./hianime";
 
+export interface MangaFilters {
+  status?: string;
+  sort?: string;
+  demographic?: string;
+}
+
+export interface AnimeFilters {
+  type?: string;
+  status?: string;
+  sort?: string;
+}
+
 export interface MangaProvider {
   id: string;
   label: string;
-  search: (query: string, lang: string, page: number) => Promise<{ items: MangaSummary[]; total: number }>;
-  popular: (lang: string, page?: number) => Promise<{ items: MangaSummary[]; total: number }>;
+  search: (query: string, lang: string, page: number, filters?: MangaFilters) => Promise<{ items: MangaSummary[]; total: number }>;
+  popular: (lang: string, page?: number, filters?: MangaFilters) => Promise<{ items: MangaSummary[]; total: number }>;
   get: (id: string) => Promise<MangaSummary & { authors: string[] }>;
   chapters: (id: string, lang: string) => Promise<Chapter[]>;
   chapter: (chapterId: string, quality: "data" | "data-saver") => Promise<ChapterPage>;
@@ -15,8 +27,8 @@ export interface MangaProvider {
 export interface AnimeProvider {
   id: string;
   label: string;
-  search: (query: string, page: number) => Promise<AnimeSummary[]>;
-  popular: (page?: number) => Promise<AnimeSummary[]>;
+  search: (query: string, page: number, filters?: AnimeFilters) => Promise<AnimeSummary[]>;
+  popular: (page?: number, filters?: AnimeFilters) => Promise<AnimeSummary[]>;
   get: (id: string) => Promise<AnimeSummary>;
   episodes: (id: string) => Promise<Episode[]>;
   stream: (episodeId: string, lang: "sub" | "dub") => Promise<hianime.AnimeStream>;

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { Chapter } from "../shared/types";
-import { errorMessage, fetchReaderData, request, withProvider, type ChaptersResponse } from "./api";
+import { errorMessage, fetchReaderData, request, withProvider, type ChaptersResponse, type MangaDetailResponse } from "./api";
 import { ProviderPicker, saveProgress, setSeenTotal } from "./bits";
 import { navigate } from "./router";
 import { IconArrowLeft, Loading } from "./ui";
@@ -37,6 +37,14 @@ export function ReaderPage({ chapterId, search }: { chapterId: string; search: s
   const prev = index > 0 ? list[index - 1] : null;
   const next = index !== -1 && index < list.length - 1 ? list[index + 1] : null;
 
+  // ponytail: one extra cached (600s) request so Continue rail cards have covers.
+  const manga = useQuery({
+    queryKey: ["reader", "cover", mangaId, provider],
+    queryFn: () => request<MangaDetailResponse>(withProvider(`/api/manga/${encodeURIComponent(mangaId!)}`, provider)),
+    enabled: mangaId !== null,
+    staleTime: 600_000,
+  });
+
   useEffect(() => {
     if (!data || !mangaId) return;
     const chapter = data.chapter;
@@ -45,14 +53,14 @@ export function ReaderPage({ chapterId, search }: { chapterId: string; search: s
       kind: "manga",
       seriesId: mangaId,
       seriesTitle: chapter.mangaTitle ?? "Manga",
-      cover: null,
+      cover: manga.data?.cover ?? null,
       itemId: chapter.id,
       label: `${chapter.volume ? `Vol.${chapter.volume} ` : ""}${chapter.chapter ? `Ch.${chapter.chapter}` : "Chapter"}`,
       lang: chapter.lang,
       url,
     });
     if (list.length > 0) setSeenTotal("manga", mangaId, list.length);
-  }, [data, mangaId, list.length, provider]);
+  }, [data, mangaId, list.length, provider, manga.data?.cover]);
 
   function back() {
     navigate(mangaId ? `/manga/${mangaId}` : "/downloads");

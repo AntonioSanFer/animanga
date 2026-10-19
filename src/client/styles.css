@@ -535,6 +535,44 @@ option {
 .rail-card {
   flex: 0 0 132px;
   scroll-snap-align: start;
+  position: relative;
+}
+
+/* ponytail: rail cards are image-only links — badge overlays the cover. */
+.rail-card .card {
+  padding: 0;
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 4;
+}
+
+.rail-card .cover {
+  height: 100%;
+}
+
+.rail-card .badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+}
+
+/* ponytail: filter panel reuses .prov dropdown chrome. */
+.prov-filters {
+  gap: 10px;
+  min-width: 210px;
+  padding: 10px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.filter-field .select {
+  width: 100%;
+  height: 34px;
 }
 
 .row {

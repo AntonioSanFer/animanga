@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AnimeSummary, MangaSummary } from "../shared/types";
 import {
   MANGA_LANGS,
-  formatDate,
   request,
   useMangaLang,
   useProvider,
@@ -11,7 +10,7 @@ import {
   type ItemsResponse,
   type SearchResponse,
 } from "./api";
-import { BackButton, ProviderPicker, getActivity, getAllProgress, hasProgress, isNewCount, safeEntryUrl } from "./bits";
+import { BackButton, FiltersButton, ProviderPicker, getActivity, getAllProgress, hasProgress, isNewCount, safeEntryUrl } from "./bits";
 import { Link } from "./router";
 import { Cover, Empty, ErrorView, IconSearch, Loading } from "./ui";
 
@@ -61,19 +60,24 @@ export function BrowseMangaPage() {
   const [provider, setProvider] = useProvider("manga");
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [sort, setSort] = useState("");
+  const [demographic, setDemographic] = useState("");
   const search = query.trim();
+  const activeFilters = [status, sort, demographic].filter(Boolean).length;
 
   const result = useInfiniteQuery({
-    queryKey: ["manga", "browse", lang, search, provider],
-    queryFn: ({ pageParam }) =>
-      search
-        ? request<SearchResponse>(
-            withProvider(
-              `/api/manga/search?${new URLSearchParams({ q: search, lang, page: String(pageParam) }).toString()}`,
-              provider,
-            ),
-          )
-        : request<SearchResponse>(`/api/manga/popular?lang=${encodeURIComponent(lang)}&page=${Number(pageParam)}`),
+    queryKey: ["manga", "browse", lang, search, provider, status, sort, demographic],
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ lang, page: String(pageParam) });
+      if (search) params.set("q", search);
+      if (status) params.set("status", status);
+      if (sort) params.set("sort", sort);
+      if (demographic) params.set("demographic", demographic);
+      return request<SearchResponse>(
+        withProvider(`/api/manga/${search ? "search" : "popular"}?${params}`, provider),
+      );
+    },
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages, lastPageParam) => {
       const total = (lastPage as { total?: unknown }).total;
@@ -112,19 +116,6 @@ export function BrowseMangaPage() {
         <BackButton to="/" />
       </div>
       <h1>Manga</h1>
-      <ContinueShelf
-        kind="manga"
-        getTotal={async (seriesId) =>
-          (
-            await request<ItemsResponse<{ id: string }>>(
-              withProvider(
-                `/api/manga/${encodeURIComponent(seriesId)}/chapters?lang=${encodeURIComponent(lang)}`,
-                provider,
-              ),
-            )
-          ).items.length
-        }
-      />
       <form className="toolbar" role="search" onSubmit={submit}>
         <label className="search-box">
           <IconSearch />
@@ -140,24 +131,63 @@ export function BrowseMangaPage() {
         <button type="submit" className="btn btn-primary">
           Search
         </button>
+        <FiltersButton active={activeFilters}>
+          <label className="filter-field">
+            <span className="muted">Language</span>
+            <select className="select" value={lang} onChange={(event) => setLang(event.target.value)}>
+              {MANGA_LANGS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="filter-field">
+            <span className="muted">Status</span>
+            <select className="select" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">All</option>
+              <option value="ongoing">Ongoing</option>
+              <option value="completed">Completed</option>
+              <option value="hiatus">Hiatus</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span className="muted">Sort</span>
+            <select className="select" value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="">Default</option>
+              <option value="relevance">Relevance</option>
+              <option value="followedCount">Most followed</option>
+              <option value="latestUploadedChapter">Latest chapter</option>
+              <option value="rating">Rating</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span className="muted">Demographic</span>
+            <select className="select" value={demographic} onChange={(event) => setDemographic(event.target.value)}>
+              <option value="">All</option>
+              <option value="shounen">Shounen</option>
+              <option value="shoujo">Shoujo</option>
+              <option value="josei">Josei</option>
+              <option value="seinen">Seinen</option>
+            </select>
+          </label>
+        </FiltersButton>
         <ProviderPicker kind="manga" value={provider} onChange={setProvider} />
-        <label className="lang-select">
-          <span className="muted">Language</span>
-          <select
-            className="select"
-            value={lang}
-            onChange={(event) => {
-              setLang(event.target.value);
-            }}
-          >
-            {MANGA_LANGS.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
       </form>
+      <ContinueShelf
+        kind="manga"
+        getTotal={async (seriesId) =>
+          (
+            await request<ItemsResponse<{ id: string }>>(
+              withProvider(
+                `/api/manga/${encodeURIComponent(seriesId)}/chapters?lang=${encodeURIComponent(lang)}`,
+                provider,
+              ),
+            )
+          ).items.length
+        }
+      />
 
       {result.isPending && <Loading />}
       {result.isError && <ErrorView error={result.error} onRetry={() => result.refetch()} />}
@@ -206,16 +236,24 @@ export function BrowseAnimePage() {
   const [provider, setProvider] = useProvider("anime");
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
+  const [type, setType] = useState("");
+  const [status, setStatus] = useState("");
+  const [sort, setSort] = useState("");
   const search = query.trim();
+  const activeFilters = [type, status, sort].filter(Boolean).length;
 
   const result = useInfiniteQuery({
-    queryKey: ["anime", "browse", search, provider],
-    queryFn: ({ pageParam }) =>
-      search
-        ? request<ItemsResponse<AnimeSummary>>(
-            withProvider(`/api/anime/search?q=${encodeURIComponent(search)}&page=${Number(pageParam)}`, provider),
-          )
-        : request<ItemsResponse<AnimeSummary>>(`/api/anime/popular?page=${Number(pageParam)}`),
+    queryKey: ["anime", "browse", search, provider, type, status, sort],
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ page: String(pageParam) });
+      if (search) params.set("q", search);
+      if (type) params.set("type", type);
+      if (status) params.set("status", status);
+      if (sort) params.set("sort", sort);
+      return request<ItemsResponse<AnimeSummary>>(
+        withProvider(`/api/anime/${search || activeFilters > 0 ? "search" : "popular"}?${params}`, provider),
+      );
+    },
     initialPageParam: 1,
     getNextPageParam: (lastPage, _allPages, lastPageParam) =>
       lastPage.items.length > 0 ? (lastPageParam as number) + 1 : undefined,
@@ -246,16 +284,6 @@ export function BrowseAnimePage() {
         <BackButton to="/" />
       </div>
       <h1>Anime</h1>
-      <ContinueShelf
-        kind="anime"
-        getTotal={async (seriesId) =>
-          (
-            await request<ItemsResponse<{ id: string }>>(
-              withProvider(`/api/anime/${encodeURIComponent(seriesId)}/episodes`, provider),
-            )
-          ).items.length
-        }
-      />
       <form className="toolbar" role="search" onSubmit={submit}>
         <label className="search-box">
           <IconSearch />
@@ -271,8 +299,57 @@ export function BrowseAnimePage() {
         <button type="submit" className="btn btn-primary">
           Search
         </button>
+        <FiltersButton active={activeFilters}>
+          <label className="filter-field">
+            <span className="muted">Type</span>
+            <select className="select" value={type} onChange={(event) => setType(event.target.value)}>
+              <option value="">All</option>
+              <option value="tv">TV</option>
+              <option value="movie">Movie</option>
+              <option value="ova">OVA</option>
+              <option value="ona">ONA</option>
+              <option value="special">Special</option>
+              <option value="music">Music</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span className="muted">Status</span>
+            <select className="select" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">All</option>
+              <option value="completed">Finished airing</option>
+              <option value="releasing">Currently airing</option>
+              <option value="not_yet_aired">Not yet aired</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span className="muted">Sort</span>
+            <select className="select" value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="">Default</option>
+              <option value="trending">Trending</option>
+              <option value="most_viewed">Most watched</option>
+              <option value="most_followed">Most followed</option>
+              <option value="avg_score">Score</option>
+              <option value="mal_score">MAL score</option>
+              <option value="release_date">Release date</option>
+              <option value="updated_date">Recently updated</option>
+              <option value="added_date">Recently added</option>
+              <option value="title_az">Name A-Z</option>
+              <option value="episode_count">Episodes</option>
+            </select>
+          </label>
+        </FiltersButton>
         <ProviderPicker kind="anime" value={provider} onChange={setProvider} />
       </form>
+      <ContinueShelf
+        kind="anime"
+        getTotal={async (seriesId) =>
+          (
+            await request<ItemsResponse<{ id: string }>>(
+              withProvider(`/api/anime/${encodeURIComponent(seriesId)}/episodes`, provider),
+            )
+          ).items.length
+        }
+      />
 
       {result.isPending && <Loading />}
       {result.isError && <ErrorView error={result.error} onRetry={() => result.refetch()} />}
@@ -306,29 +383,12 @@ export function BrowseAnimePage() {
   );
 }
 
-function ShelfCard({
-  url,
-  cover,
-  title,
-  sub,
-  isNew,
-  action,
-}: {
-  url: string;
-  cover: string | null;
-  title: string;
-  sub: string;
-  isNew: boolean;
-  action: string;
-}) {
+function ShelfCard({ url, cover, title, isNew }: { url: string; cover: string | null; title: string; isNew: boolean }) {
   return (
     <div className="rail-card">
-      <Link to={url} className="card">
+      <Link to={url} className="card" title={title}>
         <Cover src={cover} alt={`Cover of ${title}`} />
-        <span className="card-title">{title}</span>
-        <span className="card-meta">{sub}</span>
         {isNew && <span className="badge badge-accent">New</span>}
-        <span className="btn btn-sm">{action}</span>
       </Link>
     </div>
   );
@@ -376,9 +436,7 @@ function ContinueShelf({ kind, getTotal }: { kind: "manga" | "anime"; getTotal: 
                 url={safeEntryUrl(entry.url, kind === "manga" ? "/manga" : "/anime")}
                 cover={entry.cover}
                 title={entry.seriesTitle}
-                sub={`${entry.label} · ${formatDate(entry.time)}`}
                 isNew={isNewCount(kind, entry.seriesId, totals.data?.[entry.seriesId])}
-                action="Resume"
               />
             ))}
           </div>
@@ -399,9 +457,7 @@ function ContinueShelf({ kind, getTotal }: { kind: "manga" | "anime"; getTotal: 
                 url={safeEntryUrl(item.url, kind === "manga" ? "/manga" : "/anime")}
                 cover={item.cover}
                 title={item.seriesTitle}
-                sub={`${item.label} · ${formatDate(item.time)}`}
                 isNew={false}
-                action="Open"
               />
             ))}
           </div>

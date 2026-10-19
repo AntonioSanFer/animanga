@@ -54,7 +54,19 @@ export function mangaSummary(m: any): MangaSummary {
   };
 }
 
-export async function searchManga(query: string, lang: string, page = 1): Promise<{ items: MangaSummary[]; total: number }> {
+import type { MangaFilters } from "./registry";
+
+// ponytail: allowlists only — unknown values ignored, never forwarded to MangaDex.
+const MANGA_STATUS = ["ongoing", "completed", "hiatus", "cancelled"];
+const MANGA_SORTS = ["relevance", "followedCount", "latestUploadedChapter", "rating"];
+const MANGA_DEMOGRAPHICS = ["shounen", "shoujo", "josei", "seinen", "none"];
+
+function mangaOrder(sort: string | undefined, fallback: string): Params {
+  const key = MANGA_SORTS.includes(sort ?? "") ? sort! : fallback;
+  return [[`order[${key}]`, "desc"]];
+}
+
+export async function searchManga(query: string, lang: string, page = 1, filters: MangaFilters = {}): Promise<{ items: MangaSummary[]; total: number }> {
   const limit = 30;
   const offset = Math.max(0, (page - 1) * limit);
   const params: Params = [
@@ -65,30 +77,31 @@ export async function searchManga(query: string, lang: string, page = 1): Promis
     ["contentRating[]", "suggestive"],
     ["hasAvailableChapters", "true"],
     ["availableTranslatedLanguage[]", lang],
-    ["order[relevance]", "desc"],
+    ...mangaOrder(filters.sort, "relevance"),
   ];
+  if (MANGA_STATUS.includes(filters.status ?? "")) params.push(["status[]", filters.status!]);
+  if (MANGA_DEMOGRAPHICS.includes(filters.demographic ?? "")) params.push(["publicationDemographic[]", filters.demographic!]);
   if (query.trim()) params.push(["title", query.trim()]);
   const data = await mdGet<any>("/manga", params, 120);
   return { items: (data.data || []).map(mangaSummary), total: data.total || 0 };
 }
 
-export async function popularManga(lang: string, page = 1): Promise<{ items: MangaSummary[]; total: number }> {
+export async function popularManga(lang: string, page = 1, filters: MangaFilters = {}): Promise<{ items: MangaSummary[]; total: number }> {
   const limit = 30;
   const offset = Math.max(0, (page - 1) * limit);
-  const data = await mdGet<any>(
-    "/manga",
-    [
-      ["limit", String(limit)],
-      ["offset", String(offset)],
-      ["includes[]", "cover_art"],
-      ["contentRating[]", "safe"],
-      ["contentRating[]", "suggestive"],
-      ["hasAvailableChapters", "true"],
-      ["availableTranslatedLanguage[]", lang],
-      ["order[followedCount]", "desc"],
-    ],
-    600,
-  );
+  const params: Params = [
+    ["limit", String(limit)],
+    ["offset", String(offset)],
+    ["includes[]", "cover_art"],
+    ["contentRating[]", "safe"],
+    ["contentRating[]", "suggestive"],
+    ["hasAvailableChapters", "true"],
+    ["availableTranslatedLanguage[]", lang],
+    ...mangaOrder(filters.sort, "followedCount"),
+  ];
+  if (MANGA_STATUS.includes(filters.status ?? "")) params.push(["status[]", filters.status!]);
+  if (MANGA_DEMOGRAPHICS.includes(filters.demographic ?? "")) params.push(["publicationDemographic[]", filters.demographic!]);
+  const data = await mdGet<any>("/manga", params, 600);
   return { items: (data.data || []).map(mangaSummary), total: data.total || 0 };
 }
 

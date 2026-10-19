@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useContentProviders } from "./api";
 import { navigate } from "./router";
 import { IconArrowLeft } from "./ui";
@@ -156,6 +157,16 @@ function closeDetails(event: { currentTarget: HTMLElement }): void {
   if (details) details.open = false;
 }
 
+export function FiltersButton({ active, children }: { active: number; children: ReactNode }) {
+  return (
+    <details className="prov" title="Filters">
+      <summary className="prov-btn">Filters{active > 0 ? ` (${active})` : ""}</summary>
+      <div className="prov-menu prov-filters" onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </details>
+  );
+}
 export function ProviderPicker({
   kind,
   value,

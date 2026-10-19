@@ -17,6 +17,15 @@
 - [x] Back nav button on main manga/anime screens.
 - [x] Infinite scroll on Manga/Anime browse tabs (`useInfiniteQuery` + IntersectionObserver sentinel + "Load more" fallback; paged `/manga/popular`, `/anime/popular`).
 
+## Phase 3 — Browse rails, covers, filters (2026-10-19)
+- [x] Covers on Continue/Recent rails: Reader/Watch fetch series detail (cached 600s server-side) and save its cover in `saveProgress`; null covers keep placeholder.
+- [x] Image-only rail cards: `ShelfCard` renders cover link only (title attr + alt kept); NEW badge overlays top-left; fixed 3/4 aspect.
+- [x] Search bar above shelves on Manga/Anime pages (order: back-row, h1, toolbar, shelves, grid).
+- [x] `FiltersButton` (`<details>` dropdown like `ProviderPicker`) right of Search; language moved inside manga panel.
+  - Manga (MangaDex): status (ongoing/completed/hiatus/cancelled), sort (relevance/followedCount/latestUploadedChapter/rating), demographic (shounen/shoujo/josei/seinen) — allowlisted server-side, threaded through registry + source fns.
+  - Anime (HiAnime `/filter`, verified via fetched form): type (tv/movie/ova/ona/special/music), status (completed/releasing/not_yet_aired), sort (10 verified values). Skipped: rating/season/language/dates/genre (params visible but mapping unverified).
+- [x] `bun run typecheck` + `bun test` + `bun run build` green.
+
 ## Runtime download concurrency
 - [x] Admin-configurable `concurrent_downloads` (settings table + `GET`/`PATCH /api/admin/settings`, clamp 1-10, `pump()` on update); env `MAX_CONCURRENT_DOWNLOADS` remains the default.
 

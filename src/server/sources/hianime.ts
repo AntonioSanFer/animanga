@@ -73,14 +73,45 @@ function parseCards(html: string): AnimeSummary[] {
   return out;
 }
 
-export async function searchAnime(query: string, page = 1): Promise<AnimeSummary[]> {
+import type { AnimeFilters } from "./registry";
+
+// ponytail: verified against https://hianime.at/filter form (select names
+// type/status/sort + keyword). rating/season/language/dates/genre skipped —
+// unverified param mapping, add when verified.
+const ANIME_TYPES = ["tv", "movie", "ova", "ona", "special", "music"];
+const ANIME_STATUS = ["completed", "releasing", "not_yet_aired"];
+const ANIME_SORTS = ["updated_date", "added_date", "release_date", "trending", "title_az", "avg_score", "mal_score", "most_viewed", "most_followed", "episode_count"];
+
+function hasAnimeFilters(f: AnimeFilters): boolean {
+  return ANIME_TYPES.includes(f.type ?? "") || ANIME_STATUS.includes(f.status ?? "") || ANIME_SORTS.includes(f.sort ?? "");
+}
+
+function filterPath(keyword: string, page: number, f: AnimeFilters): string {
+  const qs = new URLSearchParams();
+  if (keyword.trim()) qs.set("keyword", keyword.trim());
+  if (ANIME_TYPES.includes(f.type ?? "")) qs.set("type", f.type!);
+  if (ANIME_STATUS.includes(f.status ?? "")) qs.set("status", f.status!);
+  if (ANIME_SORTS.includes(f.sort ?? "")) qs.set("sort", f.sort!);
+  qs.set("page", String(Math.max(1, page)));
+  return `/filter?${qs}`;
+}
+
+export async function searchAnime(query: string, page = 1, filters: AnimeFilters = {}): Promise<AnimeSummary[]> {
   const q = query.trim();
+  if (hasAnimeFilters(filters)) {
+    const html = await getText(filterPath(q, page, filters), 180);
+    return parseCards(html);
+  }
   if (!q) return [];
   const html = await getText(`/search?keyword=${encodeURIComponent(q)}&page=${Math.max(1, page)}`, 180);
   return parseCards(html);
 }
 
-export async function popularAnime(page = 1): Promise<AnimeSummary[]> {
+export async function popularAnime(page = 1, filters: AnimeFilters = {}): Promise<AnimeSummary[]> {
+  if (hasAnimeFilters(filters)) {
+    const html = await getText(filterPath("", page, filters), 900);
+    return parseCards(html);
+  }
   const html = await getText(`/most-popular?page=${Math.max(1, Math.floor(page) || 1)}`, 900);
   return parseCards(html);
 }

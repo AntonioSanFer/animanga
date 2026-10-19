@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import type { Episode } from "../shared/types";
+import type { AnimeSummary, Episode } from "../shared/types";
 import { request, withProvider, type ItemsResponse } from "./api";
 import { ProviderPicker, saveProgress, setSeenTotal } from "./bits";
 import { navigate } from "./router";
@@ -29,6 +29,14 @@ export function WatchPage({ episodeId, search }: { episodeId: string; search: st
 
   const stream = withProvider(`/api/anime/stream/${episodeId}?lang=${lang}`, provider);
 
+  // ponytail: one extra cached (600s) request so Continue rail cards have covers.
+  const anime = useQuery({
+    queryKey: ["watch", "cover", animeId, provider],
+    queryFn: () => request<AnimeSummary>(withProvider(`/api/anime/${encodeURIComponent(animeId)}`, provider)),
+    enabled: animeId !== "",
+    staleTime: 600_000,
+  });
+
   useEffect(() => {
     if (!animeId) return;
     const base = `/anime/watch/${episodeId}?lang=${lang}&title=${encodeURIComponent(title)}&animeId=${encodeURIComponent(animeId)}&series=${encodeURIComponent(series)}`;
@@ -36,14 +44,14 @@ export function WatchPage({ episodeId, search }: { episodeId: string; search: st
       kind: "anime",
       seriesId: animeId,
       seriesTitle: series,
-      cover: null,
+      cover: anime.data?.cover ?? null,
       itemId: episodeId,
       label: title,
       lang,
       url: withProvider(base, provider),
     });
     if (list.length > 0) setSeenTotal("anime", animeId, list.length);
-  }, [animeId, episodeId, lang, list.length, provider, series, title]);
+  }, [animeId, episodeId, lang, list.length, provider, series, title, anime.data?.cover]);
 
   function watch(id: string, epTitle: string) {
     const base = `/anime/watch/${id}?lang=${lang}&title=${encodeURIComponent(epTitle)}&animeId=${encodeURIComponent(animeId)}&series=${encodeURIComponent(series)}`;
