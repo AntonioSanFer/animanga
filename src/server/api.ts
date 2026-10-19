@@ -147,9 +147,10 @@ api.get("/manga/search", requireUser, async (c) => {
 
 api.get("/manga/popular", requireUser, async (c) => {
   const lang = mangaLang(c.req.query("lang"));
-  const items = await popularManga(lang);
+  const page = intParam(c.req.query("page") || "1", 1, 500);
+  const data = await popularManga(lang, page);
   c.header("Cache-Control", "private, max-age=120");
-  return c.json({ items });
+  return c.json({ items: data.items, total: data.total });
 });
 
 api.get("/manga/chapter/:chapterId", requireUser, async (c) => {
@@ -258,7 +259,8 @@ api.get("/anime/search", requireUser, async (c) => {
 });
 
 api.get("/anime/popular", requireUser, async (c) => {
-  const items = await popularAnime();
+  const page = intParam(c.req.query("page") || "1", 1, 100);
+  const items = await popularAnime(page);
   c.header("Cache-Control", "private, max-age=300");
   return c.json({ items });
 });

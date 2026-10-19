@@ -72,11 +72,14 @@ export async function searchManga(query: string, lang: string, page = 1): Promis
   return { items: (data.data || []).map(mangaSummary), total: data.total || 0 };
 }
 
-export async function popularManga(lang: string): Promise<MangaSummary[]> {
+export async function popularManga(lang: string, page = 1): Promise<{ items: MangaSummary[]; total: number }> {
+  const limit = 30;
+  const offset = Math.max(0, (page - 1) * limit);
   const data = await mdGet<any>(
     "/manga",
     [
-      ["limit", "30"],
+      ["limit", String(limit)],
+      ["offset", String(offset)],
       ["includes[]", "cover_art"],
       ["contentRating[]", "safe"],
       ["contentRating[]", "suggestive"],
@@ -86,7 +89,7 @@ export async function popularManga(lang: string): Promise<MangaSummary[]> {
     ],
     600,
   );
-  return (data.data || []).map(mangaSummary);
+  return { items: (data.data || []).map(mangaSummary), total: data.total || 0 };
 }
 
 export async function getManga(id: string): Promise<MangaSummary & { authors: string[] }> {

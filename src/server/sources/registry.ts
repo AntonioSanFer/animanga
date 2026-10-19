@@ -6,7 +6,7 @@ export interface MangaProvider {
   id: string;
   label: string;
   search: (query: string, lang: string, page: number) => Promise<{ items: MangaSummary[]; total: number }>;
-  popular: (lang: string) => Promise<MangaSummary[]>;
+  popular: (lang: string, page?: number) => Promise<{ items: MangaSummary[]; total: number }>;
   get: (id: string) => Promise<MangaSummary & { authors: string[] }>;
   chapters: (id: string, lang: string) => Promise<Chapter[]>;
   chapter: (chapterId: string, quality: "data" | "data-saver") => Promise<ChapterPage>;
@@ -16,7 +16,7 @@ export interface AnimeProvider {
   id: string;
   label: string;
   search: (query: string, page: number) => Promise<AnimeSummary[]>;
-  popular: () => Promise<AnimeSummary[]>;
+  popular: (page?: number) => Promise<AnimeSummary[]>;
   get: (id: string) => Promise<AnimeSummary>;
   episodes: (id: string) => Promise<Episode[]>;
   stream: (episodeId: string, lang: "sub" | "dub") => Promise<hianime.AnimeStream>;

@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState, type FormEvent } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AnimeSummary, MangaSummary } from "../shared/types";
 import {
   MANGA_LANGS,
@@ -39,36 +39,71 @@ export function AnimeCard({ anime }: { anime: AnimeSummary }) {
   );
 }
 
+function useInfiniteSentinel(hasNext: boolean, fetching: boolean, next: () => void) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNext && !fetching) next();
+      },
+      { rootMargin: "600px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasNext, fetching, next]);
+  return ref;
+}
+
 export function BrowseMangaPage() {
   const [lang, setLang] = useMangaLang();
   const [provider, setProvider] = useProvider("manga");
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
   const search = query.trim();
 
-  const result = useQuery({
-    queryKey: ["manga", "browse", lang, search, page, provider],
-    queryFn: () =>
+  const result = useInfiniteQuery({
+    queryKey: ["manga", "browse", lang, search, provider],
+    queryFn: ({ pageParam }) =>
       search
         ? request<SearchResponse>(
             withProvider(
-              `/api/manga/search?${new URLSearchParams({ q: search, lang, page: String(page) }).toString()}`,
+              `/api/manga/search?${new URLSearchParams({ q: search, lang, page: String(pageParam) }).toString()}`,
               provider,
             ),
           )
-        : request<ItemsResponse<MangaSummary>>(`/api/manga/popular?lang=${encodeURIComponent(lang)}`),
+        : request<SearchResponse>(`/api/manga/popular?lang=${encodeURIComponent(lang)}&page=${Number(pageParam)}`),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages, lastPageParam) => {
+      const total = (lastPage as { total?: unknown }).total;
+      if (typeof total === "number") {
+        const loaded = allPages.reduce((n, p) => n + p.items.length, 0);
+        return loaded < total ? (lastPageParam as number) + 1 : undefined;
+      }
+      return lastPage.items.length > 0 ? (lastPageParam as number) + 1 : undefined;
+    },
   });
 
-  const items = result.data?.items ?? [];
-  const total =
-    result.data && "total" in result.data && typeof result.data.total === "number" ? result.data.total : null;
-  const pages = total === null ? 1 : Math.max(1, Math.ceil(total / 30));
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    const out: MangaSummary[] = [];
+    for (const page of result.data?.pages ?? []) {
+      for (const manga of page.items) {
+        if (seen.has(manga.id)) continue;
+        seen.add(manga.id);
+        out.push(manga);
+      }
+    }
+    return out;
+  }, [result.data]);
+  const pages = result.data?.pages ?? [];
+  const total = pages.length > 0 && typeof pages[pages.length - 1].total === "number" ? pages[pages.length - 1].total : null;
+  const sentinelRef = useInfiniteSentinel(!!result.hasNextPage, result.isFetching, result.fetchNextPage);
 
   function submit(event: FormEvent) {
     event.preventDefault();
     setQuery(input);
-    setPage(1);
   }
 
   return (
@@ -105,14 +140,7 @@ export function BrowseMangaPage() {
         <button type="submit" className="btn btn-primary">
           Search
         </button>
-        <ProviderPicker
-          kind="manga"
-          value={provider}
-          onChange={(next) => {
-            setProvider(next);
-            setPage(1);
-          }}
-        />
+        <ProviderPicker kind="manga" value={provider} onChange={setProvider} />
         <label className="lang-select">
           <span className="muted">Language</span>
           <select
@@ -120,7 +148,6 @@ export function BrowseMangaPage() {
             value={lang}
             onChange={(event) => {
               setLang(event.target.value);
-              setPage(1);
             }}
           >
             {MANGA_LANGS.map((item) => (
@@ -144,28 +171,30 @@ export function BrowseMangaPage() {
               <MangaCard key={manga.id} manga={manga} />
             ))}
           </div>
-          {search && total !== null && (
+          <div ref={sentinelRef} aria-hidden="true" />
+          {result.isFetchingNextPage && <Loading />}
+          {result.hasNextPage ? (
             <div className="pager">
               <button
                 type="button"
                 className="btn btn-sm"
-                disabled={page <= 1}
-                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                disabled={result.isFetchingNextPage}
+                onClick={() => result.fetchNextPage()}
               >
-                Previous
+                Load more
               </button>
-              <span className="muted">
-                Page {page} of {pages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={page >= pages}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                Next
-              </button>
+              {total !== null && (
+                <span className="muted">
+                  {items.length} of {total}
+                </span>
+              )}
             </div>
+          ) : (
+            total !== null && (
+              <p className="muted">
+                Showing {items.length} of {total}
+              </p>
+            )
           )}
         </>
       )}
@@ -179,17 +208,32 @@ export function BrowseAnimePage() {
   const [query, setQuery] = useState("");
   const search = query.trim();
 
-  const result = useQuery({
+  const result = useInfiniteQuery({
     queryKey: ["anime", "browse", search, provider],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       search
         ? request<ItemsResponse<AnimeSummary>>(
-            withProvider(`/api/anime/search?q=${encodeURIComponent(search)}&page=1`, provider),
+            withProvider(`/api/anime/search?q=${encodeURIComponent(search)}&page=${Number(pageParam)}`, provider),
           )
-        : request<ItemsResponse<AnimeSummary>>("/api/anime/popular"),
+        : request<ItemsResponse<AnimeSummary>>(`/api/anime/popular?page=${Number(pageParam)}`),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.items.length > 0 ? (lastPageParam as number) + 1 : undefined,
   });
 
-  const items = result.data?.items ?? [];
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    const out: AnimeSummary[] = [];
+    for (const page of result.data?.pages ?? []) {
+      for (const anime of page.items) {
+        if (seen.has(anime.id)) continue;
+        seen.add(anime.id);
+        out.push(anime);
+      }
+    }
+    return out;
+  }, [result.data]);
+  const sentinelRef = useInfiniteSentinel(!!result.hasNextPage, result.isFetching, result.fetchNextPage);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -236,11 +280,27 @@ export function BrowseAnimePage() {
         <Empty>No anime found{search ? ` for “${search}”` : ""}.</Empty>
       )}
       {items.length > 0 && (
-        <div className="grid">
-          {items.map((anime) => (
-            <AnimeCard key={anime.id} anime={anime} />
-          ))}
-        </div>
+        <>
+          <div className="grid">
+            {items.map((anime) => (
+              <AnimeCard key={anime.id} anime={anime} />
+            ))}
+          </div>
+          <div ref={sentinelRef} aria-hidden="true" />
+          {result.isFetchingNextPage && <Loading />}
+          {result.hasNextPage && (
+            <div className="pager">
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={result.isFetchingNextPage}
+                onClick={() => result.fetchNextPage()}
+              >
+                Load more
+              </button>
+            </div>
+          )}
+        </>
       )}
     </>
   );

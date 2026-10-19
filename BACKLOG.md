@@ -15,6 +15,7 @@
 - [x] "Continue watching/reading" as horizontal scrollable + expandable rail on Manga/Anime screens (Home tab removed; `/` renders Manga).
 - [x] "Recent activity" as second rail per screen.
 - [x] Back nav button on main manga/anime screens.
+- [x] Infinite scroll on Manga/Anime browse tabs (`useInfiniteQuery` + IntersectionObserver sentinel + "Load more" fallback; paged `/manga/popular`, `/anime/popular`).
 
 ## Runtime download concurrency
 - [x] Admin-configurable `concurrent_downloads` (settings table + `GET`/`PATCH /api/admin/settings`, clamp 1-10, `pump()` on update); env `MAX_CONCURRENT_DOWNLOADS` remains the default.

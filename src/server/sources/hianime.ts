@@ -80,8 +80,8 @@ export async function searchAnime(query: string, page = 1): Promise<AnimeSummary
   return parseCards(html);
 }
 
-export async function popularAnime(): Promise<AnimeSummary[]> {
-  const html = await getText("/most-popular", 900);
+export async function popularAnime(page = 1): Promise<AnimeSummary[]> {
+  const html = await getText(`/most-popular?page=${Math.max(1, Math.floor(page) || 1)}`, 900);
   return parseCards(html);
 }
 
