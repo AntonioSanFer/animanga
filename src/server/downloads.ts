@@ -361,6 +361,9 @@ async function downloadAnime(job: DownloadJob, signal: AbortSignal): Promise<voi
         stream.url,
         "-c",
         "copy",
+        // ponytail: HLS AAC is ADTS-framed; MP4 needs ASC (same stall as the watch path without this).
+        "-bsf:a",
+        "aac_adtstoasc",
         "-movflags",
         "+faststart",
         finalPath,

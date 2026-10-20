@@ -50,6 +50,9 @@ export async function animeStreamResponse(
     stream.url,
     "-c",
     "copy",
+    // ponytail: HLS carries AAC in ADTS framing; MP4 needs ASC or the muxer aborts on the first audio packet (~1s of video, then stall).
+    "-bsf:a",
+    "aac_adtstoasc",
     "-movflags",
     "frag_keyframe+empty_moov+default_base_moof",
     "-f",
