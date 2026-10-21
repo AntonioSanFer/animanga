@@ -413,6 +413,17 @@ option {
   font-weight: 700;
 }
 
+.card-cover {
+  position: relative;
+  display: block;
+}
+
+.card-cover .badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+}
+
 .card:hover .cover {
   border-color: #3f3f4a;
 }

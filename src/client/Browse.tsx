@@ -14,11 +14,14 @@ import { BackButton, FiltersButton, ProviderPicker, getActivity, getAllProgress,
 import { Link } from "./router";
 import { Cover, Empty, ErrorView, IconSearch, Loading } from "./ui";
 
-export function MangaCard({ manga }: { manga: MangaSummary }) {
+export function MangaCard({ manga, isNew }: { manga: MangaSummary; isNew?: boolean }) {
   const meta = [manga.year, manga.status].filter(Boolean).join(" · ");
   return (
     <Link to={`/manga/${manga.id}`} className="card">
-      <Cover src={manga.cover} alt={`Cover of ${manga.title}`} />
+      <span className="card-cover">
+        <Cover src={manga.cover} alt={`Cover of ${manga.title}`} />
+        {isNew && <span className="badge badge-accent">New</span>}
+      </span>
       <span className="card-title">{manga.title}</span>
       <span className="card-meta">{meta || "Manga"}</span>
       {hasProgress("manga", manga.id) && <span className="badge badge-accent">Continue</span>}
@@ -26,11 +29,14 @@ export function MangaCard({ manga }: { manga: MangaSummary }) {
   );
 }
 
-export function AnimeCard({ anime }: { anime: AnimeSummary }) {
+export function AnimeCard({ anime, isNew }: { anime: AnimeSummary; isNew?: boolean }) {
   const meta = [anime.type, anime.duration].filter(Boolean).join(" · ");
   return (
     <Link to={`/anime/${anime.id}`} className="card">
-      <Cover src={anime.cover} alt={`Cover of ${anime.title}`} />
+      <span className="card-cover">
+        <Cover src={anime.cover} alt={`Cover of ${anime.title}`} />
+        {isNew && <span className="badge badge-accent">New</span>}
+      </span>
       <span className="card-title">{anime.title}</span>
       <span className="card-meta">{meta || "Anime"}</span>
       {hasProgress("anime", anime.id) && <span className="badge badge-accent">Continue</span>}
@@ -113,6 +119,35 @@ export function BrowseMangaPage() {
     }
     return out;
   }, [result.data]);
+  // ponytail: NEW badge only makes sense for started series — and only those need live counts.
+  const getMangaTotal = (seriesId: string) =>
+    request<ItemsResponse<{ id: string }>>(
+      withProvider(
+        `/api/manga/${encodeURIComponent(seriesId)}/chapters?lang=${encodeURIComponent(lang)}`,
+        provider,
+      ),
+    ).then((res) => res.items.length);
+  const progressIds = useMemo(
+    () => items.filter((manga) => hasProgress("manga", manga.id)).map((manga) => manga.id).slice(0, 30),
+    [items],
+  );
+  const totals = useQuery({
+    queryKey: ["grid-new", "manga", lang, provider, progressIds.join(",")],
+    queryFn: async () => {
+      const out: Record<string, number> = {};
+      await Promise.all(
+        progressIds.map(async (id) => {
+          try {
+            out[id] = await getMangaTotal(id);
+          } catch {
+            // offline item — no NEW badge
+          }
+        }),
+      );
+      return out;
+    },
+    enabled: progressIds.length > 0,
+  });
   const pages = result.data?.pages ?? [];
   const total = pages.length > 0 && typeof pages[pages.length - 1].total === "number" ? pages[pages.length - 1].total : null;
   const sentinelRef = useInfiniteSentinel(!!result.hasNextPage, result.isFetching, result.fetchNextPage);
@@ -224,19 +259,7 @@ export function BrowseMangaPage() {
           }}
         />
       </form>
-      <ContinueShelf
-        kind="manga"
-        getTotal={async (seriesId) =>
-          (
-            await request<ItemsResponse<{ id: string }>>(
-              withProvider(
-                `/api/manga/${encodeURIComponent(seriesId)}/chapters?lang=${encodeURIComponent(lang)}`,
-                provider,
-              ),
-            )
-          ).items.length
-        }
-      />
+      <ContinueShelf kind="manga" getTotal={getMangaTotal} />
 
       {result.isPending && <Loading />}
       {result.isError && <ErrorView error={result.error} onRetry={() => result.refetch()} />}
@@ -247,7 +270,7 @@ export function BrowseMangaPage() {
         <>
           <div className="grid">
             {items.map((manga) => (
-              <MangaCard key={manga.id} manga={manga} />
+              <MangaCard key={manga.id} manga={manga} isNew={isNewCount("manga", manga.id, totals.data?.[manga.id])} />
             ))}
           </div>
           <div ref={sentinelRef} aria-hidden="true" />
@@ -320,6 +343,32 @@ export function BrowseAnimePage() {
     }
     return out;
   }, [result.data]);
+  // ponytail: NEW badge only makes sense for started series — and only those need live counts.
+  const getAnimeTotal = (seriesId: string) =>
+    request<ItemsResponse<{ id: string }>>(
+      withProvider(`/api/anime/${encodeURIComponent(seriesId)}/episodes`, provider),
+    ).then((res) => res.items.length);
+  const progressIds = useMemo(
+    () => items.filter((anime) => hasProgress("anime", anime.id)).map((anime) => anime.id).slice(0, 30),
+    [items],
+  );
+  const totals = useQuery({
+    queryKey: ["grid-new", "anime", provider, progressIds.join(",")],
+    queryFn: async () => {
+      const out: Record<string, number> = {};
+      await Promise.all(
+        progressIds.map(async (id) => {
+          try {
+            out[id] = await getAnimeTotal(id);
+          } catch {
+            // offline item — no NEW badge
+          }
+        }),
+      );
+      return out;
+    },
+    enabled: progressIds.length > 0,
+  });
   const sentinelRef = useInfiniteSentinel(!!result.hasNextPage, result.isFetching, result.fetchNextPage);
 
   function submit(event: FormEvent) {
@@ -389,16 +438,7 @@ export function BrowseAnimePage() {
         </FiltersButton>
         <ProviderPicker kind="anime" value={provider} onChange={setProvider} />
       </form>
-      <ContinueShelf
-        kind="anime"
-        getTotal={async (seriesId) =>
-          (
-            await request<ItemsResponse<{ id: string }>>(
-              withProvider(`/api/anime/${encodeURIComponent(seriesId)}/episodes`, provider),
-            )
-          ).items.length
-        }
-      />
+      <ContinueShelf kind="anime" getTotal={getAnimeTotal} />
 
       {result.isPending && <Loading />}
       {result.isError && <ErrorView error={result.error} onRetry={() => result.refetch()} />}
@@ -409,7 +449,7 @@ export function BrowseAnimePage() {
         <>
           <div className="grid">
             {items.map((anime) => (
-              <AnimeCard key={anime.id} anime={anime} />
+              <AnimeCard key={anime.id} anime={anime} isNew={isNewCount("anime", anime.id, totals.data?.[anime.id])} />
             ))}
           </div>
           <div ref={sentinelRef} aria-hidden="true" />
