@@ -36,9 +36,10 @@ export function AnimeDetailPage({ id }: { id: string }) {
 
   const anime = animeQuery.data;
   const favourite = favourites.data?.items.some((item) => item.kind === "anime" && item.sourceId === id) ?? false;
+  // ponytail: badge is global (shared files) — download tab list itself is per-user.
   const downloaded = new Set(
-    (downloads.data?.items ?? [])
-      .filter((job) => job.kind === "anime" && job.status === "done" && job.lang === lang)
+    (downloads.data?.downloaded ?? (downloads.data?.items ?? []).filter((job) => job.status === "done"))
+      .filter((job) => job.kind === "anime" && job.lang === lang)
       .map((job) => job.itemId),
   );
 

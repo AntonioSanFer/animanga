@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS downloads (
   label TEXT NOT NULL,
   cover TEXT,
   lang TEXT,
+  email TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'queued',
   progress INTEGER NOT NULL DEFAULT 0,
   file_path TEXT,
@@ -43,10 +44,48 @@ CREATE TABLE IF NOT EXISTS downloads (
   error TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  UNIQUE (kind, source_id, item_id, lang)
+  UNIQUE (kind, source_id, item_id, lang, email)
 );
 CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
+`);
 
+ // ponytail: pre-owner rows lack email + global UNIQUE — rebuild once so queue is per-user, files stay shared.
+{
+  const cols = db.query("PRAGMA table_info(downloads)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "email")) {
+    db.exec(`
+      CREATE TABLE downloads_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        label TEXT NOT NULL,
+        cover TEXT,
+        lang TEXT,
+        email TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'queued',
+        progress INTEGER NOT NULL DEFAULT 0,
+        file_path TEXT,
+        size INTEGER,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (kind, source_id, item_id, lang, email)
+      );
+      INSERT OR IGNORE INTO downloads_new
+        (id, kind, source_id, item_id, title, label, cover, lang, email, status, progress, file_path, size, error, created_at, updated_at)
+        SELECT id, kind, source_id, item_id, title, label, cover, lang, '', status, progress, file_path, size, error, created_at, updated_at FROM downloads;
+      DROP TABLE downloads;
+      ALTER TABLE downloads_new RENAME TO downloads;
+      CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
+    `);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_downloads_email ON downloads(email)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status)`);
+}
+
+db.exec(`
 CREATE TABLE IF NOT EXISTS cache (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -87,6 +126,7 @@ export type DownloadRow = {
   label: string;
   cover: string | null;
   lang: string | null;
+  email: string;
   status: "queued" | "downloading" | "done" | "error";
   progress: number;
   file_path: string | null;
@@ -166,6 +206,33 @@ export function getDownloadByKey(kind: Kind, sourceId: string, itemId: string, l
     .query("SELECT * FROM downloads WHERE kind = ? AND source_id = ? AND item_id = ? AND lang IS ?")
     .get(kind, sourceId, itemId, lang) as DownloadRow | null;
   return row ? toDownload(row) : null;
+}
+
+export function getOwnDownload(
+  kind: Kind,
+  sourceId: string,
+  itemId: string,
+  lang: string | null,
+  email: string,
+): DownloadJob | null {
+  const row = db
+    .query("SELECT * FROM downloads WHERE kind = ? AND source_id = ? AND item_id = ? AND lang IS ? AND email = ?")
+    .get(kind, sourceId, itemId, lang, email) as DownloadRow | null;
+  return row ? toDownload(row) : null;
+}
+
+export function listDownloads(email: string, isAdmin: boolean): DownloadJob[] {
+  const rows = isAdmin
+    ? ((db.query("SELECT * FROM downloads ORDER BY created_at DESC LIMIT 500").all() as DownloadRow[]))
+    : ((db.query("SELECT * FROM downloads WHERE email = ? ORDER BY created_at DESC LIMIT 500").all(email) as DownloadRow[]));
+  return rows.map(toDownload);
+}
+
+export function listDoneKeys(): { kind: Kind; itemId: string; lang: string | null }[] {
+  const rows = db
+    .query("SELECT DISTINCT kind, item_id, lang FROM downloads WHERE status = 'done' LIMIT 5000")
+    .all() as { kind: Kind; item_id: string; lang: string | null }[];
+  return rows.map((r) => ({ kind: r.kind, itemId: r.item_id, lang: r.lang }));
 }
 
 export function findDoneDownloadId(kind: Kind, itemId: string, lang?: string | null): number | null {

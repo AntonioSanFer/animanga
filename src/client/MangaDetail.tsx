@@ -44,9 +44,10 @@ export function MangaDetailPage({ id }: { id: string }) {
 
   const manga = mangaQuery.data;
   const favourite = favourites.data?.items.some((item) => item.kind === "manga" && item.sourceId === id) ?? false;
+  // ponytail: badge is global (shared files) — download tab list itself is per-user.
   const downloaded = new Set(
-    (downloads.data?.items ?? [])
-      .filter((job) => job.kind === "manga" && job.status === "done")
+    (downloads.data?.downloaded ?? (downloads.data?.items ?? []).filter((job) => job.status === "done"))
+      .filter((job) => job.kind === "manga")
       .map((job) => job.itemId),
   );
 

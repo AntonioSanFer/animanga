@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { AUTH_PROVIDERS, callbackUrl, passwordAuthEnabled } from "./auth";
 import { countActiveAdmins, findAppUser, requireAdmin, requireSession, requireUser, type AppEnv } from "./access";
-import { db, findDoneDownloadId, getDownload } from "./db";
+import { db, findDoneDownloadId, getDownload, listDoneKeys, listDownloads } from "./db";
 import { findCachedImage, IMAGE_ITEM_LIMIT, saveCachedImage } from "./imageCache";
 import { downloadName, chapterDownloadName, buildMangaZip, createDownload, deleteDownload, concurrency, setConcurrency } from "./downloads";
 import { contentDisposition, serveFile } from "./files";
@@ -422,13 +422,15 @@ api.get("/img/anime", requireUser, async (c) => {
 // ---------- downloads ----------
 
 api.get("/downloads", requireUser, (c) => {
-  const rows = db.query("SELECT * FROM downloads ORDER BY created_at DESC LIMIT 500").all() as any[];
+  const appUser = c.get("appUser");
+  // ponytail: download tab is per-user (admins see all); `downloaded` stays global so badges show shared files.
+  const jobs = listDownloads(appUser.email, appUser.role === "admin");
   return c.json({
-    items: rows.map((r) => ({
+    items: jobs.map((r) => ({
       id: r.id,
       kind: r.kind,
-      sourceId: r.source_id,
-      itemId: r.item_id,
+      sourceId: r.sourceId,
+      itemId: r.itemId,
       title: r.title,
       label: r.label,
       cover: r.cover,
@@ -437,9 +439,10 @@ api.get("/downloads", requireUser, (c) => {
       progress: r.progress,
       size: r.size,
       error: r.error,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
     })),
+    downloaded: listDoneKeys(),
   });
 });
 
@@ -461,7 +464,10 @@ api.post("/downloads", requireUser, async (c) => {
   if (kind === "anime" && lang !== "sub" && lang !== "dub") return c.json({ error: "Invalid language" }, 400);
 
   try {
-    return c.json(createDownload({ kind, sourceId, itemId, title, label, cover, lang: kind === "anime" ? lang : null }), 201);
+    return c.json(
+      createDownload({ kind, sourceId, itemId, title, label, cover, lang: kind === "anime" ? lang : null, email: c.get("appUser").email }),
+      201,
+    );
   } catch (err: any) {
     return c.json({ error: err?.message || "Could not queue download" }, 429);
   }

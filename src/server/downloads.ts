@@ -9,7 +9,7 @@ import {
   UA,
   YTDLP,
 } from "./config";
-import { db, getDownload, getDownloadByKey, getSetting, setSetting, toDownload, type DownloadRow } from "./db";
+import { db, getDownload, getOwnDownload, getSetting, setSetting, toDownload, type DownloadRow } from "./db";
 import { getChapterImages, getChapterMeta } from "./sources/mangadex";
 import { chapterDownloadName as weebChapterDownloadName, getChapterImages as weebChapterImages } from "./sources/weebcentral";
 import { chapterDownloadName as pillChapterDownloadName, getChapterImages as pillChapterImages } from "./sources/mangapill";
@@ -76,15 +76,47 @@ export function createDownload(input: {
   label: string;
   cover: string | null;
   lang: string | null;
+  email: string;
 }): DownloadJob {
-  const existing = getDownloadByKey(input.kind, input.sourceId, input.itemId, input.lang);
-  if (existing) {
-    const path = filePathOf(existing.id);
-    if (existing.status === "done" && path && existsSync(path)) return existing;
-    if (existing.status === "queued" || existing.status === "downloading") return existing;
-    patchJob(existing.id, { status: "queued", progress: 0, error: null, filePath: null, size: null });
-    enqueue(existing.id);
-    return getDownload(existing.id)!;
+  const email = input.email.trim().toLowerCase();
+  const own = getOwnDownload(input.kind, input.sourceId, input.itemId, input.lang, email);
+  if (own) {
+    const path = filePathOf(own.id);
+    if (own.status === "done" && path && existsSync(path)) return own;
+    if (own.status === "queued" || own.status === "downloading") return own;
+    patchJob(own.id, { status: "queued", progress: 0, error: null, filePath: null, size: null });
+    enqueue(own.id);
+    return getDownload(own.id)!;
+  }
+
+  // ponytail: files are shared — a done copy from anyone completes your row instantly, no re-download.
+  const shared = db
+    .query(
+      "SELECT file_path, size FROM downloads WHERE kind = ? AND item_id = ? AND lang IS ? AND status = 'done' ORDER BY id DESC LIMIT 1",
+    )
+    .get(input.kind, input.itemId, input.lang) as { file_path: string | null; size: number | null } | null;
+  if (shared?.file_path && existsSync(shared.file_path)) {
+    const now = Date.now();
+    const result = db
+      .query(
+        `INSERT INTO downloads (kind, source_id, item_id, title, label, cover, lang, email, status, progress, file_path, size, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'done', 100, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.kind,
+        input.sourceId,
+        input.itemId,
+        input.title,
+        input.label,
+        input.cover,
+        input.lang,
+        email,
+        shared.file_path,
+        shared.size,
+        now,
+        now,
+      );
+    return getDownload(Number(result.lastInsertRowid))!;
   }
 
   const activeCount = (db.query("SELECT COUNT(*) AS n FROM downloads WHERE status IN ('queued','downloading')").get() as { n: number }).n;
@@ -93,10 +125,10 @@ export function createDownload(input: {
   const now = Date.now();
   const result = db
     .query(
-      `INSERT INTO downloads (kind, source_id, item_id, title, label, cover, lang, status, progress, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?)`,
+      `INSERT INTO downloads (kind, source_id, item_id, title, label, cover, lang, email, status, progress, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?)`,
     )
-    .run(input.kind, input.sourceId, input.itemId, input.title, input.label, input.cover, input.lang, now, now);
+    .run(input.kind, input.sourceId, input.itemId, input.title, input.label, input.cover, input.lang, email, now, now);
   const id = Number(result.lastInsertRowid);
   enqueue(id);
   return getDownload(id)!;
@@ -136,6 +168,25 @@ function pump(): void {
 async function runJob(id: number): Promise<void> {
   const job = getDownload(id);
   if (!job || job.status !== "queued") return;
+  // ponytail: files are shared — adopt a done copy or wait for a sibling download instead of writing the same file twice.
+  const shared = db
+    .query(
+      "SELECT file_path, size FROM downloads WHERE kind = ? AND item_id = ? AND lang IS ? AND status = 'done' AND id != ? ORDER BY id DESC LIMIT 1",
+    )
+    .get(job.kind, job.itemId, job.lang, id) as { file_path: string | null; size: number | null } | null;
+  if (shared?.file_path && existsSync(shared.file_path)) {
+    patchJob(id, { status: "done", progress: 100, filePath: shared.file_path, size: shared.size, error: null });
+    return;
+  }
+  const sibling = db
+    .query(
+      "SELECT id FROM downloads WHERE kind = ? AND item_id = ? AND lang IS ? AND status = 'downloading' AND id != ? LIMIT 1",
+    )
+    .get(job.kind, job.itemId, job.lang, id) as { id: number } | null;
+  if (sibling) {
+    queue.push(id);
+    return;
+  }
   const cancel = new AbortController();
   cancels.set(id, cancel);
   patchJob(id, { status: "downloading", progress: 0, error: null });
@@ -205,7 +256,7 @@ async function downloadManga(job: DownloadJob, signal: AbortSignal): Promise<voi
   const dir = join(DOWNLOAD_DIR, "manga", job.sourceId);
   mkdirSync(dir, { recursive: true });
   const finalPath = join(dir, `${job.itemId}.cbz`);
-  const tmpPath = `${finalPath}.part`;
+  const tmpPath = `${finalPath}.${job.id}.part`;
 
   const files: Record<string, Uint8Array> = {};
   let done = 0;
@@ -407,10 +458,24 @@ export function cancelDownload(id: number): void {
 }
 
 function cleanupPartial(job: DownloadJob): void {
+  // ponytail: never wipe a shared final — if siblings remain, drop only your own manga tmp.
+  const siblings = (
+    db
+      .query("SELECT COUNT(*) AS n FROM downloads WHERE kind = ? AND source_id = ? AND item_id = ? AND lang IS ? AND id != ?")
+      .get(job.kind, job.sourceId, job.itemId, job.lang, job.id) as { n: number }
+  ).n;
   const dir = join(DOWNLOAD_DIR, job.kind, job.sourceId);
-  const prefix =
-    job.kind === "anime" ? `${job.itemId}.${job.lang === "dub" ? "dub" : "sub"}.` : `${job.itemId}.`;
   try {
+    if (siblings > 0) {
+      if (job.kind === "manga") {
+        try {
+          unlinkSync(join(dir, `${job.itemId}.cbz.${job.id}.part`));
+        } catch {}
+      }
+      return;
+    }
+    const prefix =
+      job.kind === "anime" ? `${job.itemId}.${job.lang === "dub" ? "dub" : "sub"}.` : `${job.itemId}.`;
     for (const file of readdirSync(dir)) {
       if (file.startsWith(prefix)) {
         try {
@@ -426,14 +491,18 @@ export function deleteDownload(id: number): void {
   if (!job) return;
   cancelDownload(id);
   const path = filePathOf(id);
-  if (path && existsSync(path)) {
+  // ponytail: file is shared — only unlink when no other row still references it.
+  const shared = path
+    ? (db.query("SELECT COUNT(*) AS n FROM downloads WHERE file_path = ? AND id != ?").get(path, id) as { n: number }).n
+    : 0;
+  if (path && shared === 0 && existsSync(path)) {
     try {
       unlinkSync(path);
     } catch {}
   }
   if (job.status === "downloading" || job.status === "queued") {
     setTimeout(() => cleanupPartial(job), 1200);
-  } else {
+  } else if (shared === 0) {
     cleanupPartial(job);
   }
   db.query("DELETE FROM downloads WHERE id = ?").run(id);

@@ -116,10 +116,21 @@ export function useMe() {
   });
 }
 
+export interface DownloadedKey {
+  kind: string;
+  itemId: string;
+  lang: string | null;
+}
+
+export interface DownloadsResponse {
+  items: DownloadJob[];
+  downloaded?: DownloadedKey[];
+}
+
 export function useDownloads() {
   return useQuery({
     queryKey: ["downloads"],
-    queryFn: () => request<ItemsResponse<DownloadJob>>("/api/downloads"),
+    queryFn: () => request<DownloadsResponse>("/api/downloads"),
     refetchInterval: (query) => {
       const items = query.state.data?.items;
       return items?.some((job) => job.status === "queued" || job.status === "downloading") ? 2000 : false;
@@ -136,7 +147,7 @@ export function useFavourites() {
 
 async function savedCopyId(chapter: ChapterPage): Promise<number | null> {
   if (typeof chapter.downloadId === "number") return chapter.downloadId;
-  const downloads = await request<ItemsResponse<DownloadJob>>("/api/downloads").catch(() => null);
+  const downloads = await request<DownloadsResponse>("/api/downloads").catch(() => null);
   return (
     downloads?.items.find((item) => item.kind === "manga" && item.itemId === chapter.id && item.status === "done")?.id ?? null
   );
