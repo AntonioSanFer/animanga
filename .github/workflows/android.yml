@@ -28,7 +28,8 @@ jobs:
       - run: java -cp out RunTests
 
       - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        with:
+          packages: platform-tools "platforms;android-34" "build-tools;34.0.0"
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew && ./gradlew assembleDebug --console=plain
 
@@ -59,7 +60,8 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        with:
+          packages: platform-tools "platforms;android-34" "build-tools;34.0.0"
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Check signing secrets
