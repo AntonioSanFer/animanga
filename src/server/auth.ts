@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { genericOAuth } from "better-auth/plugins";
 import { db } from "./db";
-import { BASE_URL, isTrustedOrigin, loadSecret, TRUSTED_ORIGINS } from "./config";
+import { BASE_URL, loadSecret, TRUSTED_ORIGINS } from "./config";
 import type { AiO } from "../shared/types";
 
 const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {

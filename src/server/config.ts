@@ -8,9 +8,13 @@ export const DB_PATH = join(DATA_DIR, "app.db");
 export const DOWNLOAD_DIR = join(DATA_DIR, "downloads");
 export const DIST_DIR = join(process.cwd(), "dist");
 
-export const BASE_URL = (process.env.BETTER_AUTH_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
+export const BASE_URLS = (process.env.BETTER_AUTH_URL || `http://localhost:${PORT}`)
+  .split(",")
+  .map((s) => s.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+export const BASE_URL = BASE_URLS[0] || `http://localhost:${PORT}`;
 export const TRUSTED_ORIGINS = [
-  BASE_URL,
+  ...BASE_URLS,
   ...(process.env.TRUSTED_ORIGINS || "")
     .split(",")
     .map((s) => s.trim())
