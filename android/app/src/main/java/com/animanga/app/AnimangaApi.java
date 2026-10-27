@@ -57,6 +57,39 @@ public final class AnimangaApi {
         return "/api/anime/search?q=" + encode(q) + "&page=" + page;
     }
 
+    public static String animeEpisodes(String seriesId) { return "/api/anime/" + encode(seriesId) + "/episodes"; }
+    public static String animeStream(String episodeId, String lang) {
+        return "/api/anime/stream/" + encode(episodeId) + "?lang=" + encode(lang);
+    }
+    public static String animeSubtitle(String episodeId, String lang) {
+        return "/api/anime/subtitle/" + encode(episodeId) + "?lang=" + encode(lang);
+    }
+
+    // ---- favourites (mirrors web Favourites.tsx) ----
+    public Resp getFavourites() throws Exception { return get("/api/favourites"); }
+
+    public Resp addFavourite(String kind, String sourceId, String title, String cover) throws Exception {
+        String c = cover == null || !cover.startsWith("/api/img/") ? "null" : "\"" + ApiModels.esc(cover) + "\"";
+        return postJson("/api/favourites",
+                "{\"kind\":\"" + ApiModels.esc(kind) + "\",\"sourceId\":\"" + ApiModels.esc(sourceId)
+                        + "\",\"title\":\"" + ApiModels.esc(title) + "\",\"cover\":" + c + "}");
+    }
+
+    public Resp removeFavourite(String kind, String sourceId) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url("/api/favourites/" + encode(kind) + "/" + encode(sourceId))).openConnection();
+        c.setConnectTimeout(15000); c.setReadTimeout(30000);
+        c.setRequestMethod("DELETE");
+        c.setRequestProperty("Accept", "application/json");
+        String cookie = jar.header();
+        if (!cookie.isEmpty()) c.setRequestProperty("Cookie", cookie);
+        int code = c.getResponseCode();
+        jar.storeFromHeaders(c.getHeaderFields());
+        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+        String body = in == null ? "" : readAll(in);
+        c.disconnect();
+        return new Resp(code, body);
+    }
+
     // ---- auth (native email/password — mirrors web Accounts.tsx, no WebView) ----
     public Resp getProviders() throws Exception { return get("/api/providers"); }
     public Resp getMe() throws Exception { return get("/api/me"); }

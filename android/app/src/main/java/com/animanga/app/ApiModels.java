@@ -19,6 +19,24 @@ public final class ApiModels {
         public String cover = "";
     }
 
+    public static final class Fav {
+        public String kind = "";
+        public String sourceId = "";
+        public String title = "";
+        public String cover = "";
+    }
+
+    /** Parse GET /api/favourites {"items":[{kind,sourceId,title,cover,createdAt}]}. */
+    public static List<Fav> parseFavourites(String body) {
+        List<Fav> out = new ArrayList<>();
+        for (Row r : parseRows(body == null ? "" : body, "fav")) {
+            Fav f = new Fav();
+            f.kind = r.kind; f.sourceId = r.sourceId; f.title = r.title; f.cover = r.cover;
+            if (!f.sourceId.isEmpty()) out.add(f);
+        }
+        return out;
+    }
+
     /** Parse browse lists (manga/anime) and detail lists (chapter/episode) into rows. */
     public static List<Row> parseRows(String body, String kind) {
         List<Row> out = new ArrayList<>();
@@ -49,6 +67,15 @@ public final class ApiModels {
 
     private static Row rowOf(String obj, String kind) {
         Row r = new Row();
+        if (kind.equals("fav")) {
+            r.kind = field(obj, "kind", "");
+            r.sourceId = field(obj, "sourceId", "");
+            r.itemId = r.sourceId;
+            r.title = field(obj, "title", r.sourceId);
+            r.cover = field(obj, "cover", "");
+            r.label = r.kind;
+            return r;
+        }
         if (kind.equals("episode")) {
             r.kind = "anime";
             r.itemId = field(obj, "id", "");

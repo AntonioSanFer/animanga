@@ -46,6 +46,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val selected = MutableStateFlow<ApiModels.Row?>(null)
 
+    // ponytail: favourites + player target live here so Browse/Detail/Watch share them without nav args.
+    private val _favs = MutableStateFlow<List<ApiModels.Fav>>(emptyList())
+    val favs: StateFlow<List<ApiModels.Fav>> = _favs.asStateFlow()
+    val animeLang = MutableStateFlow("sub")
+    val watch = MutableStateFlow<WatchTarget?>(null)
+
+    fun loadFavourites() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val a = _api.value ?: return@launch
+                val r = a.getFavourites()
+                if (r.code == 200) _favs.value = ApiModels.parseFavourites(r.body)
+            } catch (_: Exception) { }
+        }
+    }
+
+    fun toggleFavourite(s: ApiModels.Row) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val a = _api.value ?: return@launch
+                val saved = _favs.value.any { it.kind == s.kind && it.sourceId == s.sourceId }
+                if (saved) a.removeFavourite(s.kind, s.sourceId)
+                else a.addFavourite(s.kind, s.sourceId, s.title, s.cover)
+                val r = a.getFavourites()
+                if (r.code == 200) _favs.value = ApiModels.parseFavourites(r.body)
+            } catch (_: Exception) { }
+        }
+    }
+
     private val _entries = MutableStateFlow(store.list())
     val entries: StateFlow<List<DownloadStore.Entry>> = _entries.asStateFlow()
 
@@ -199,6 +228,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 }
+
+data class WatchTarget(
+    val episodeId: String,
+    val animeId: String,
+    val seriesTitle: String,
+    val label: String,
+    val lang: String,
+)
 
 data class Sso(val id: String, val label: String)
 

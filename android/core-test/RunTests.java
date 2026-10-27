@@ -47,6 +47,15 @@ public class RunTests {
         check(ApiModels.apiError("{\"error\":\"Access pending\",\"status\":\"pending\"}", "fb").equals("Access pending"), "apiError falls back to error");
         check(ApiModels.appUserStatus("{\"appUser\":{\"status\":\"pending\"}}").equals("pending"), "appUserStatus pending");
         check(ApiModels.appUserStatus("{\"appUser\":{\"email\":\"a@b.c\"}}").isEmpty(), "appUserStatus empty when absent");
+
+        // favourites parsing + URL builders
+        String favs = "{\"items\":[{\"kind\":\"manga\",\"sourceId\":\"m1\",\"title\":\"One Piece\",\"cover\":\"/api/img/manga/a/b\",\"createdAt\":1},{\"kind\":\"anime\",\"sourceId\":\"solo-leveling\",\"title\":\"Solo Leveling\",\"cover\":null,\"createdAt\":2}]}";
+        java.util.List<ApiModels.Fav> fl = ApiModels.parseFavourites(favs);
+        check(fl.size() == 2 && fl.get(0).sourceId.equals("m1") && fl.get(1).kind.equals("anime"), "parse favourites list");
+        check(ApiModels.parseFavourites("{\"items\":[]}").isEmpty(), "parse empty favourites");
+        check(AnimangaApi.animeStream("42", "sub").equals("/api/anime/stream/42?lang=sub"), "anime stream url");
+        check(AnimangaApi.animeSubtitle("42", "sub").equals("/api/anime/subtitle/42?lang=sub"), "anime subtitle url");
+        check(AnimangaApi.animeEpisodes("solo-leveling").equals("/api/anime/solo-leveling/episodes"), "anime episodes url");
         // 1. ServerConfig
         check(ServerConfig.normalize("manga.home.local:3000").equals("https://manga.home.local:3000"), "domain gets https prefix");
         check(ServerConfig.normalize("http://192.168.1.50:3000/").equals("http://192.168.1.50:3000"), "trailing slash stripped");
@@ -118,6 +127,24 @@ public class RunTests {
                 check(me2.code == 401, "live /api/me 401 after signout (" + me2.code + ")");
                 AnimangaApi.Resp si = api.signInEmail(email, "testpass123");
                 check(si.code == 200 && api.hasSession(), "live signin restores session (" + si.code + ")");
+                // live favourites round-trip on a dedicated active dev account (skip if absent)
+                AnimangaApi dev = new AnimangaApi(live);
+                AnimangaApi.Resp dsi = dev.signInEmail("emu@test.local", "testpass123");
+                AnimangaApi.Resp f0 = dsi.code == 200 ? dev.getFavourites() : null;
+                if (f0 != null && f0.code == 200) {
+                    check(true, "live favourites list (" + f0.code + ")");
+                    AnimangaApi.Resp fa = dev.addFavourite("manga", "11111111-2222-3333-4444-555555555555", "Test Series", null);
+                    check(fa.code == 201, "live favourite add (" + fa.code + ")");
+                    AnimangaApi.Resp f1 = dev.getFavourites();
+                    check(f1.code == 200 && f1.body.contains("11111111-2222-3333-4444-555555555555"), "live favourite present after add");
+                    AnimangaApi.Resp fr = dev.removeFavourite("manga", "11111111-2222-3333-4444-555555555555");
+                    check(fr.code == 200, "live favourite remove (" + fr.code + ")");
+                    AnimangaApi.Resp f2 = dev.getFavourites();
+                    check(f2.code == 200 && !f2.body.contains("11111111-2222-3333-4444-555555555555"), "live favourite gone after remove");
+                    dev.signOut();
+                } else {
+                    System.out.println("skip - live favourites (no active dev account)");
+                }
                 api.signOut();
             }
         } else {

@@ -16,13 +16,22 @@ Design: 5 Pencil screens — 01 Server Setup, 02 Browse, 03 Detail, 04 Downloade
   downloads use the server queue (`POST /api/downloads` → poll → `GET /api/downloads/:id/file`),
   then save bytes to phone storage.
 - `app/src/main/java/com/animanga/app/ApiModels.java` — dependency-free JSON row parsing
+  (browse/detail lists, favourites)
 - `app/src/main/java/com/animanga/app/DownloadStore.java` — on-phone registry (JSONL + files)
 - `app/src/main/java/com/animanga/app/OfflinePolicy.java` — `manual || (auto && !wifi)`
 - `MainActivity.kt`, `AppViewModel.kt`, `Theme.kt`, `SetupLoginScreens.kt`,
-  `BrowseScreens.kt` — Compose UI (Material3 dark theme matching the Pencil tokens).
+  `BrowseScreens.kt`, `FavouritesScreen.kt`, `WatchScreen.kt` — Compose UI (Material3
+  dark theme matching the Pencil tokens).
   Login is native email/password mirroring web `Accounts.tsx` (SSO buttons open the
   system browser); no WebView anywhere. Covers via Coil, session cookie header,
   system proxy bypassed (covers live on the user's LAN server).
+- Favourites tab + heart on Detail (`GET/POST/DELETE /api/favourites`).
+- Watch screen (Media3 ExoPlayer): plays the phone file when downloaded ("On phone"),
+  else the server remux endpoint ("Server stream", no full download needed);
+  English VTT subtitles attached for sub; Prev/Next episode, Sub/Dub toggle,
+  "Save to device" queues a server download. Note: strict players need a real
+  AAC ASC in the remux — the server writes one (`-c:a aac` + `delay_moov`,
+  see `src/server/media.ts`).
 
 ## Build APK (Android Studio SDK)
 

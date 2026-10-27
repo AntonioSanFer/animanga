@@ -141,18 +141,23 @@ fun DetailScreen(
     onDownloaded: () -> Unit,
     onLogin: () -> Unit,
     onLocked: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     val series by vm.selected.collectAsStateWithLifecycle()
     val entries by vm.entries.collectAsStateWithLifecycle()
     val dlMsg by vm.dlMsg.collectAsStateWithLifecycle()
+    val favs by vm.favs.collectAsStateWithLifecycle()
+    val lang by vm.animeLang.collectAsStateWithLifecycle()
     var desc by remember { mutableStateOf("") }
     var items by remember { mutableStateOf<List<ApiModels.Row>>(emptyList()) }
     var err by remember { mutableStateOf("") }
     var busyId by remember { mutableStateOf<String?>(null) }
     val s = series
+    val isFav = s != null && favs.any { it.kind == s.kind && it.sourceId == s.sourceId }
 
     LaunchedEffect(s?.itemId) {
         vm.clearDlMsg()
+        vm.loadFavourites()
         busyId = null
         if (s == null) return@LaunchedEffect
         err = ""
@@ -198,9 +203,25 @@ fun DetailScreen(
         Row {
             CoverImage(vm.coverUrl(s.cover), vm.cookieHeader(), s.title, Modifier.width(120.dp).aspectRatio(0.75f).clip(RoundedCornerShape(8.dp)))
             Spacer(Modifier.width(12.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(s.title, color = BodyText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text(s.label, color = Secondary, fontSize = 14.sp)
+            }
+            TextButton(onClick = { vm.toggleFavourite(s) }) {
+                Text(if (isFav) "♥" else "♡", color = if (isFav) Accent else Secondary, fontSize = 26.sp)
+            }
+        }
+        if (s.kind == "anime") {
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.clip(RoundedCornerShape(20.dp)).background(Surface).padding(4.dp)) {
+                for ((id, label) in listOf("sub" to "Sub", "dub" to "Dub")) {
+                    val active = lang == id
+                    TextButton(
+                        onClick = { vm.animeLang.value = id },
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                            .background(if (active) Accent else androidx.compose.ui.graphics.Color.Transparent),
+                    ) { Text(label, color = if (active) BodyText else Secondary, fontWeight = FontWeight.Bold) }
+                }
             }
         }
         if (desc.isNotEmpty()) {
@@ -234,10 +255,20 @@ fun DetailScreen(
                         }
                     }
                 }
+                if (s.kind == "anime") {
+                    Button(
+                        onClick = {
+                            vm.watch.value = WatchTarget(row.itemId, s.sourceId, s.title, row.label.ifEmpty { row.title }, lang)
+                            onPlay()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                    ) { Text("Play", fontSize = 13.sp) }
+                    Spacer(Modifier.width(8.dp))
+                }
                 Button(
                     onClick = {
                         busyId = row.itemId
-                        vm.startDownload(s, row, if (s.kind == "anime") "sub" else "en") {
+                        vm.startDownload(s, row, if (s.kind == "anime") lang else "en") {
                             busyId = null
                             onDownloaded()
                         }

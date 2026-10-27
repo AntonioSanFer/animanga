@@ -48,13 +48,19 @@ export async function animeStreamResponse(
     `Origin: ${stream.referer.replace(/\/$/, "")}\r\n`,
     "-i",
     stream.url,
-    "-c",
+    "-c:v",
     "copy",
-    // ponytail: HLS carries AAC in ADTS framing; MP4 needs ASC or the muxer aborts on the first audio packet (~1s of video, then stall).
-    "-bsf:a",
-    "aac_adtstoasc",
+    // ponytail: the ADTS->ASC bitstream filter emits an ASC that ExoPlayer's strict
+    // parser rejects (AacUtil crash) — re-encode audio instead; browsers play it identically.
+    "-c:a",
+    "aac",
+    "-b:a",
+    "128k",
     "-movflags",
-    "frag_keyframe+empty_moov+default_base_moof",
+    // ponytail: delay_moov holds the initial moov until the first fragment is cut, so the
+    // audio encoder has produced extradata by then and esds carries a real ASC (ExoPlayer
+    // hard-crashes on the ASC-less esds that plain empty_moov emits for live pipes).
+    "frag_keyframe+empty_moov+default_base_moof+delay_moov",
     "-f",
     "mp4",
     "pipe:1",

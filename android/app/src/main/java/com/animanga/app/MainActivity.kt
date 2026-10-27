@@ -58,7 +58,7 @@ fun AppNav(vm: AppViewModel, start: String) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
-    val showBar = route == "browse" || route == "downloaded" || route == "settings"
+    val showBar = route == "browse" || route == "favourites" || route == "downloaded" || route == "settings"
     Scaffold(
         containerColor = Bg,
         bottomBar = { if (showBar) BottomTabs(nav, route) },
@@ -86,6 +86,17 @@ fun AppNav(vm: AppViewModel, start: String) {
                         onDownloaded = { nav.navigate("downloaded") },
                         onLogin = { nav.resetTo("login") },
                         onLocked = { nav.resetTo("pending") },
+                        onPlay = { nav.navigate("watch") },
+                    )
+                }
+                composable("favourites") {
+                    FavouritesScreen(vm, goDetail = { nav.navigate("detail") })
+                }
+                composable("watch") {
+                    WatchScreen(
+                        vm,
+                        onBack = { nav.popBackStack() },
+                        onDownloaded = { nav.navigate("downloaded") },
                     )
                 }
                 composable("downloaded") { DownloadedScreen(vm) }
@@ -103,7 +114,7 @@ fun BottomTabs(nav: NavController, route: String?) {
         Modifier.fillMaxWidth().background(Surface).padding(8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        for ((r, label) in listOf("browse" to "Browse", "downloaded" to "Downloaded", "settings" to "Settings")) {
+        for ((r, label) in listOf("browse" to "Browse", "favourites" to "Favourites", "downloaded" to "Downloaded", "settings" to "Settings")) {
             val active = route == r
             TextButton(onClick = { if (!active) nav.navigate(r) { launchSingleTop = true } }) {
                 Text(
