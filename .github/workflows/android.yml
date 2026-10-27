@@ -24,7 +24,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - run: javac -d out core-test/RunTests.java app/src/main/java/com/animanga/app/ServerConfig.java app/src/main/java/com/animanga/app/AnimangaApi.java app/src/main/java/com/animanga/app/OfflinePolicy.java app/src/main/java/com/animanga/app/DownloadStore.java
+      - run: javac -d out core-test/RunTests.java app/src/main/java/com/animanga/app/*.java
       - run: java -cp out RunTests
 
       - uses: android-actions/setup-android@v3
