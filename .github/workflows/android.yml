@@ -1,0 +1,96 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      # ponytail: core logic has zero Android deps — verify on plain javac/java, no emulator.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: javac -d out core-test/RunTests.java app/src/main/java/com/animanga/app/ServerConfig.java app/src/main/java/com/animanga/app/AnimangaApi.java app/src/main/java/com/animanga/app/OfflinePolicy.java app/src/main/java/com/animanga/app/DownloadStore.java
+      - run: java -cp out RunTests
+
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew && ./gradlew assembleDebug --console=plain
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: android
+    env:
+      APP_VERSION: ${{ github.ref_name }}
+      ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Check signing secrets
+        run: |
+          for s in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!s}" ]; then echo "Missing secret $s — see android/README.md (Release signing)."; exit 1; fi
+          done
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Decode keystore
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "${{ runner.temp }}/release.jks"
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      - run: chmod +x gradlew && ./gradlew assembleRelease bundleRelease --console=plain
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ github.ref_name }}
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab

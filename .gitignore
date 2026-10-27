@@ -5,3 +5,9 @@ data/
 .env.local
 *.log
 .pando/
+# android
+local.properties
+.gradle/
+build/
+android/app/build/
+android/out/
