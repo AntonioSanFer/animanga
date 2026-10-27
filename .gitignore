@@ -4,6 +4,7 @@ data/
 .env
 .env.local
 *.log
+*.jks
 .pando/
 # android
 local.properties
